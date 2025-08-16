@@ -1,0 +1,10 @@
+# Python
+backend/.venv/
+backend/__pycache__/
+*.pyc
+
+# Node
+frontend-miniapp/node_modules/
+frontend-miniapp/dist/
+
+# Environ
