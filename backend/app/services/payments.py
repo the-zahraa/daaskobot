@@ -1,49 +1,70 @@
 # backend/app/services/payments.py
 from __future__ import annotations
-import time
-from dataclasses import dataclass
-from typing import List, Tuple
+
+from typing import Dict, Any, List
 from aiogram.types import LabeledPrice
 
-# --- Plans you sell via Stars ---
-# Adjust amounts as you wish. For Stars invoices, currency is "XTR".
-# IMPORTANT: 'amount' is an integer number of Stars.
-@dataclass(frozen=True)
-class StarsPlan:
-    code: str
-    title: str
-    description: str
-    amount_stars: int      # integer number of stars for the whole invoice
-    duration_days: int     # how long the subscription should last
+from app.repositories.plans import get_plan_by_code
+from app.services.owners import is_owner
 
-PLANS: dict[str, StarsPlan] = {
-    "PRO_MONTH": StarsPlan(
-        code="PRO_MONTH",
-        title="Pro — 30 days",
-        description="Advanced analytics, invite link tracking, mass DM, filters.",
-        amount_stars=300,
-        duration_days=30,
-    ),
-    "PRO_QUARTER": StarsPlan(
-        code="PRO_QUARTER",
-        title="Pro — 90 days",
-        description="3 months of Pro at a discount.",
-        amount_stars=800,
-        duration_days=90,
-    ),
+# Fallbacks used when DB has no plans yet
+PLANS_FALLBACK: Dict[str, Dict[str, Any]] = {
+    "PRO_WEEK": {
+        "code": "PRO_WEEK",
+        "title": "Pro (7 days)",
+        "description": "Unlock Force Join + advanced analytics + reports for a week",
+        "price_stars": 80,
+        "duration_days": 7,
+        "is_active": True,
+    },
+    "PRO_MONTH": {
+        "code": "PRO_MONTH",
+        "title": "Pro (30 days)",
+        "description": "Unlock Force Join + advanced analytics + reports",
+        "price_stars": 300,
+        "duration_days": 30,
+        "is_active": True,
+    },
+    "PRO_YEAR": {
+        "code": "PRO_YEAR",
+        "title": "Pro (365 days)",
+        "description": "Unlock Force Join + advanced analytics + reports",
+        "price_stars": 3000,
+        "duration_days": 365,
+        "is_active": True,
+    },
 }
 
-def get_plan(plan_code: str) -> StarsPlan:
-    if plan_code not in PLANS:
-        raise ValueError("Unknown plan code")
-    return PLANS[plan_code]
+def _owner_free_plan() -> Dict[str, Any]:
+    return {
+        "code": "OWNER_PRO",
+        "title": "Pro (Owner Free)",
+        "description": "All features unlocked for bot owner",
+        "price_stars": 0,
+        "duration_days": 36500,  # ~100 years
+        "is_active": True,
+    }
 
-def stars_labeled_prices(plan: StarsPlan) -> List[LabeledPrice]:
-    # For Stars, one line item is fine; the amount is the number of stars.
-    return [LabeledPrice(label=plan.title, amount=plan.amount_stars)]
+def stars_labeled_prices(plan: Dict[str, Any]) -> List[LabeledPrice]:
+    """
+    Convert a plan into Telegram LabeledPrice for Stars payments.
+    """
+    label = plan.get("title") or plan.get("code") or "Pro"
+    amount = int(plan.get("price_stars") or 0)
+    return [LabeledPrice(label=label, amount=amount)]
 
-def build_payload(user_id: int, tenant_id: str, plan_code: str) -> str:
-    # Payload is opaque to Telegram; we’ll parse it on success.
-    # Keep it short (<= 128 bytes).
-    ts = int(time.time())
-    return f"TEN:{tenant_id}|USR:{user_id}|PLAN:{plan_code}|TS:{ts}"
+
+async def get_plan_resolved(plan_code: str, user_id: int | None = None) -> Dict[str, Any]:
+    """
+    Resolve plan from DB; if missing/inactive, fallback to in-memory defaults.
+    Bot owner bypasses payment and always receives a free Pro plan.
+    """
+    if user_id is not None and is_owner(user_id):
+        return _owner_free_plan()
+
+    db_plan = await get_plan_by_code(plan_code)
+    if db_plan and db_plan.get("is_active"):
+        return db_plan
+
+    # Fallbacks
+    return PLANS_FALLBACK.get(plan_code, PLANS_FALLBACK["PRO_MONTH"])

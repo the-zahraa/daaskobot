@@ -1,0 +1,381 @@
+{
+  "common": {
+    "back": "⬅️ Back"
+  },
+
+  "ui": {
+    "owner": {
+      "admin_panel": "👑 Open Admin Panel",
+      "my_dashboard": "🧭 Open My Dashboard"
+    }
+  },
+
+  "dash": {
+    "buttons": {
+      "overview": "🏠 Overview",
+      "linked_chats": "🔗 Linked chats",
+      "analytics": "📈 Analytics",
+      "reports": "🧾 Reports",
+      "campaigns": "📣 Campaigns",
+      "group_tools": "📎 Group tools",
+      "help": "❓ Help",
+      "settings": "⚙️ Settings"
+    }
+  },
+
+  "request_phone": {
+    "button": "📱 Share phone number",
+    "prompt": "Before we continue, please share your phone number."
+  },
+
+  "access": {
+    "denied_geofence": "Sorry, this bot is currently only available for European phone numbers (+30 to +59) or Telegram anonymous numbers (+888)."
+  },
+
+  "contact": {
+    "thanks_in": "Thanks! You’re in ✅\n\nUse the menu below to explore your dashboard."
+  },
+
+  "force_join": {
+    "open_target": "🔗 Open {target}",
+    "ijoined_button": "✅ I joined",
+    "prompt": "🔒 Please join the required channels / groups to continue.",
+    "prompt_private_aware": "🔒 To use this bot, you must first join the required channels / groups.\n\nJoin them, then tap <b>I joined</b>.",
+    "verified": "Thanks! You’re verified ✅",
+    "not_joined_alert": "You still haven’t joined all required channels. Please join them and try again.",
+    "group_still_need": "🔒 You still need to join all required channels / groups, then tap <b>I joined</b>.",
+    "group_verified": "All good! You’re verified for this group ✅",
+    "dm_prompt": "🔒 You need to join the required channels / groups to chat in <b>{group}</b>.\nJoin all targets, then tap <b>I joined</b>.",
+    "group_notice": "{mention}, you must join the required channels / groups. Start a DM with me to get the buttons."
+  },
+
+  "start": {
+    "owner_welcome": "Welcome, owner.\n\nChoose an option:",
+    "ask_phone": "Before we continue, please share your phone number."
+  },
+
+  "dashboard": {
+    "title": "🧭 <b>Dashboard</b>",
+    "plan": "• Your plan: <b>{plan}</b>",
+    "tip": "Use the menu below to navigate."
+  },
+
+  "overview": {
+    "title": "🏠 <b>Overview</b>",
+    "current_plan": "• Current plan: <b>{plan}</b>"
+  },
+
+  "chats": {
+    "linked_title": "🔗 <b>Linked chats</b>",
+    "none_tip": "No chats yet.\n\nTip: add the bot as admin in a group / channel, then use /link (group/channel) or /link_channel in DM.",
+    "item": "• <code>{cid}</code> — {ctype} — {title}",
+    "more": "… and {n} more"
+  },
+
+  "errors": {
+    "no_tenant": "No workspace found yet. Start the bot in DM and link a chat first."
+  },
+
+  "analytics": {
+    "none_chats": "📈 Analytics\nNo linked chats yet.",
+    "select_chat": "Select a chat to view analytics:",
+    "title_30d": "📈 <b>Analytics (last 30 days)</b>",
+    "total_joins": "• Total joins: <b>{n}</b>",
+    "total_leaves": "• Total leaves: <b>{n}</b>",
+    "messages_7d": "• Messages (7 days): <b>{n}</b>",
+    "avg_dau_7d": "• Avg daily active users (7 days): <b>{avg}</b>",
+    "peak_hour": "• Peak hour (Europe/Helsinki, 30 days): <b>{hour}:00</b> — {count} messages",
+    "top_user_30d": "• Most active user (30 days): <b>{user}</b> — {count} messages",
+    "pro_required_note": "⭐️ Messages, DAU, peak hour and top users are <b>Pro</b> features. Use /pro to upgrade.",
+    "last7_header": "\nLast 7 days (joins / leaves):",
+    "day_line": "{date}: +{joins} / -{leaves}"
+  },
+
+  "reports": {
+    "none_chats": "🧾 Reports\nNo linked chats yet.",
+    "select_chat": "🧾 Select a chat to generate a PDF report:",
+    "chat_button": "{title} ({type})",
+    "errors": {
+      "pro_only": "Reports are a Pro feature."
+    },
+    "ui": {
+      "invalid_request": "Invalid report request.",
+      "not_allowed": "You don’t have access to that chat.",
+      "generating": "🧾 Generating your PDF report…",
+      "failed": "I couldn’t build the report. Error: {err}",
+      "sent_caption": "📄 Report for <b>{title}</b> · last {days} day(s)",
+      "done": "Report ready ✅",
+      "sent_no_file": "The report was generated, but I couldn’t send the file."
+    },
+    "cover": {
+      "title": "Chat report",
+      "subtitle": "Period: {start}–{end}",
+      "chat": "Chat: {title}",
+      "generated": "Generated: {dt} UTC"
+    },
+    "kpi": {
+      "title": "Overview",
+      "joins": "Joins",
+      "leaves": "Leaves",
+      "net": "Net growth",
+      "messages": "Messages (30 days)",
+      "avg_dau": "Avg DAU (30 days)",
+      "peak_hour": "Peak hour (last 30 days)",
+      "top_user": "Top user (30 days): {top_user_id} — {count} messages",
+      "window": "Last {n} days",
+      "window30": "Last 30 days",
+      "window30_users": "Last 30 days (users)",
+      "peak_count": "{n} messages"
+    },
+    "series": {
+      "joins_leaves": "Joins vs leaves (last 30 days)",
+      "messages": "Messages (last 30 days)",
+      "dau": "Daily active users (last 30 days)"
+    },
+    "axis": {
+      "day": "Day",
+      "count": "Count",
+      "users": "Users"
+    },
+    "campaigns": {
+      "title": "Top campaigns (last 30 days)",
+      "ylabel": "Joins"
+    },
+    "top_talkers": {
+      "title": "Top talkers (last 30 days)",
+      "header_user": "User ID",
+      "header_msgs": "Messages"
+    }
+  },
+
+  "admin": {
+    "not_auth": "You’re not allowed to open the admin panel.",
+    "panel": "👑 <b>Admin panel</b>\nChoose what you want to manage:",
+    "overview_title": "👑 <b>Admin overview</b>",
+    "overview_lines": "• Users: <b>{users}</b>\n• Pro users: <b>{premium}</b>\n• Workspaces: <b>{tenants}</b>\n• Linked chats: <b>{chats}</b>",
+    "kb": {
+      "back_to_dashboard": "👤 My dashboard",
+      "overview": "📊 Overview",
+      "tenants": "🏢 Workspaces",
+      "search_tenants": "🔎 Search workspaces",
+      "broadcast": "📨 Broadcast",
+      "force_join": "🔒 Global force-join",
+      "plans": "💳 Plans & pricing",
+      "settings": "⚙️ Admin settings"
+    },
+    "tenants": {
+      "prev": "⬅️ Previous",
+      "next": "Next ➡️",
+      "export_pdf": "📄 Export all (PDF)",
+      "back": "⬅️ Back to admin",
+      "back_to_tenant": "⬅️ Back to list",
+      "none": "No workspaces yet.",
+      "title_latest": "🏢 Latest workspaces:",
+      "search_prompt": "Send a name, owner ID, or part of it to search workspaces.",
+      "search_title": "🔎 Search results for “{q}”:",
+      "no_results": "No workspaces matched your search.",
+      "export_caption": "📄 All workspaces with basic stats.",
+      "export_done": "Export sent.",
+      "tenant_not_found": "Workspace not found.",
+      "tenant_title": "🏢 Workspace details",
+      "tenant_lines": "• Name: <b>{name}</b>\n• Owner Telegram ID: <code>{owner}</code>\n• Created: <b>{created}</b>",
+      "linked_none": "This workspace has no linked chats yet.",
+      "linked_title": "🔗 Linked chats for this workspace:",
+      "linked_more": "… and {n} more chats",
+      "force_title": "🔒 Global required channels / groups\n\n",
+      "force_none": "No global required channels are set.",
+      "remove": "❌ Remove {target}",
+      "add_target": "➕ Add required channel",
+      "back_overview": "⬅️ Back to admin",
+      "add_prompt": "Send one or more lines.\nEach line must be a @username, -100… chat ID, or a full t.me link.",
+      "invalid_lines": "I didn’t find any valid targets in your message.",
+      "force_added": "Added:\n{lines}",
+      "force_list_head": "Current required channels:\n",
+      "force_no_targets": "No required channels are configured.",
+      "current_list": "Current list:\n{lines}",
+      "force_removed_now": "Removed.\n\n{current}",
+      "back_overview_short": "⬅️ Back"
+    },
+    "settings_placeholder": "Admin settings will live here later.",
+    "plans_fallback": "The plans UI is not available right now."
+  },
+
+  "tenant_ui": {
+    "kb": {
+      "linked_chats": "🔗 View linked chats"
+    }
+  },
+
+  "ap": {
+  "home_title": "📦 Plans & Pricing (Admin)",
+  "home_btn_list": "📜 View all plans",
+  "home_btn_create_defaults": "✨ Create default PRO plans",
+  "home_btn_create_custom": "➕ Create new plan",
+  "home_btn_refresh": "🔄 Refresh",
+  "btn_back": "⬅️ Back",
+  "btn_back_admin": "🏠 Back to admin panel",
+
+  "list_title": "📜 All plans",
+  "list_none": "No plans found. Use the buttons below to create defaults or a new plan.",
+  "plan_row": "{code} — {price}⭐ ({active})",
+
+  "view_block": "<b>{title}</b> ({code})\n{desc}\n\nDuration: {days} days\nPrice: {price}⭐\nStatus: {status}",
+  "view_status_active": "Active",
+  "view_status_inactive": "Inactive",
+  "view_delta_minus50": "-50⭐",
+  "view_delta_minus10": "-10⭐",
+  "view_delta_plus10": "+10⭐",
+  "view_delta_plus50": "+50⭐",
+  "view_set_custom": "✏️ Set custom price",
+  "view_toggle": "{label}",
+  "view_back_to_list": "⬅️ Back to plans",
+
+  "not_allowed": "You are not allowed to manage plans.",
+  "plan_not_found": "Plan not found.",
+  "invalid_delta": "Invalid price delta.",
+  "defaults_done": "Default plans have been created/updated.",
+
+  "send_custom_prompt": "Send a new price in Stars for plan <b>{code}</b>.",
+  "send_custom_invalid": "Please send a valid positive integer price.",
+
+  "create_ask_code": "Send a plan code (e.g. PRO_MONTH_PLUS). Use letters, digits and underscores only, no spaces.",
+  "create_invalid_code": "Invalid code. Use letters, digits and underscores only, no spaces.",
+  "create_ask_title": "Send a human-readable title for plan <b>{code}</b>.",
+  "create_invalid_title": "Title cannot be empty.",
+  "create_ask_description": "Send a short description for this plan (or send '-' for none).",
+  "create_ask_price": "Send the price in Stars (integer).",
+  "create_invalid_price": "Invalid price. Send a non-negative integer.",
+  "create_ask_duration": "Send the duration in days (integer > 0).",
+  "create_invalid_duration": "Invalid duration. Send a positive integer.",
+  "create_done": "✅ Plan <b>{code}</b> has been created/updated.\nDuration: {days} days\nPrice: {price}⭐"
+},
+
+  "bcast": {
+    "kb_compose": "✏️ Compose broadcast",
+    "kb_back": "⬅️ Back to admin",
+    "open": "📨 <b>Broadcast to all users</b>\n\nYou can send a one-time message to all users who have started the bot.",
+    "compose_prompt": "Send the text you want to broadcast.\nUse /cancel to stop.",
+    "cancelled": "Broadcast cancelled.",
+    "send_text_required": "Please send some text first.",
+    "sending": "Sending your broadcast…",
+    "done": "Done ✅ Sent: <b>{sent}</b>, failed: <b>{failed}</b>."
+  },
+
+  "camp": {
+    "buttons": {
+      "back": "⬅️ Back",
+      "new_quick": "➕ New quick link",
+      "list": "📋 Existing links",
+      "top": "🏆 Top campaigns",
+      "open_invite": "🔗 Open invite"
+    },
+    "no_chats": "You have no linked chats yet.\nLink a group or channel first.",
+    "pick_chat": "Choose a chat to manage campaign links:",
+    "menu_head": "📣 <b>Campaign links</b>\nCreate invite links with labels and see which ones bring members.",
+    "public_block": "Campaign tracking works only in private groups / channels where this bot can create invite links.",
+    "list": {
+      "none": "No campaign links yet for this chat.",
+      "title": "📋 <b>Existing campaign links</b>:"
+    },
+    "stats": {
+      "none": "No joins recorded from campaign links in the last 30 days.",
+      "title": "🏆 <b>Top campaigns (30 days)</b>"
+    },
+    "create": {
+      "cant_create": "I couldn’t create a new invite link.\nError: {err}",
+      "created": "✅ New campaign link created:\n\nName: <b>{label}</b>\nLink:\n<code>{url}</code>"
+    },
+    "pro_gate": "Campaign analytics are a <b>Pro</b> feature.",
+    "admin_only": "Only chat admins can manage campaign links here.",
+    "cmd": {
+      "help_free": "Command /campaigns shows how to use campaign tracking.\n\nUpgrade to Pro to unlock full campaign analytics.",
+      "help_pro": "Use the in-bot menu (Campaigns) to manage links and see stats.\n\nThis command is just a shortcut to the help text.",
+      "clear_wrong_place": "Run /campaigns_clear inside a group, supergroup or channel.",
+      "admins_only": "Only admins can clear campaign links for this chat.",
+      "cleared": "All campaign links for this chat have been cleared."
+    }
+  },
+
+  "link": {
+    "admins_only_link": "Only group admins can link this chat.",
+    "couldnt_verify_admin": "I couldn’t verify your admin status, but I’ll try to link the chat anyway.",
+    "tenant_fail": "I couldn’t create your workspace. Please try again later.",
+    "channel_redirect": "Run /link_channel in a DM with me to link this channel.",
+    "usage": "Usage: /link_channel @channel_username\nor: /link_channel -1001234567890",
+    "not_found": "I couldn’t find that chat. Please check the username / ID.",
+    "wrong_type": "That isn’t a channel. This command is only for channels.",
+    "make_me_admin": "Please add me as an admin in that channel first, then try again.",
+    "cant_verify_my_admin": "I couldn’t verify my admin status in that channel.",
+    "tenant_fail_you": "I couldn’t create your workspace. Please try again later.",
+    "linked_ok": "This group is now linked to your workspace ✅",
+    "linked_channel": "Channel <b>{title}</b> is now linked to your workspace ✅"
+  },
+
+  "gt": {
+    "title": "📎 <b>Group tools</b>",
+    "pro_gate": "Group tools are a <b>Pro</b> feature. Upgrade to unlock force-join and more.",
+    "none_chats": "No linked groups yet.\nLink a group first, then come back here.",
+    "pick_group": "Choose a group to configure force-join:",
+    "buttons": {
+      "back": "⬅️ Back",
+      "add": "➕ Add required channel",
+      "list": "📋 View required channels",
+      "clear": "🗑 Clear all",
+      "how": "ℹ️ How it works",
+      "cancel": "✖️ Cancel"
+    },
+    "errors": {
+      "pro_only": "Group tools are available only on the Pro plan.",
+      "admin_only": "Only group admins can manage force-join.",
+      "need_valid": "Please send a valid @channel, -100… chat ID, or full t.me link."
+    },
+    "menu_lead": "Configure what channels / groups members must join before they can speak.",
+    "list": {
+      "none": "No required channels for this group yet.",
+      "title": "📋 Required channels / groups:"
+    },
+    "clear": {
+      "ok": "All required channels for this group have been cleared."
+    },
+    "how": {
+      "body": "How this works:\n\n1. Add one or more required channels / groups.\n2. New members are muted when they join the group.\n3. They get a DM with buttons to join your targets.\n4. Once they have joined, they tap “I joined” to be unmuted."
+    },
+    "add": {
+      "prompt": "Send a single @username, -100 ID or t.me link to add as required for this group.",
+      "added": "Added: <b>{target}</b>\n\nYou can add more or go back to the menu."
+    }
+  },
+
+  "group_tools": {
+    "help": "With group tools you can:\n\n• Require users to join specific channels before speaking\n• Automatically mute new members until they join\n• Track joins and leaves for your groups\n\nOpen this in a linked group to configure the rules.",
+    "pro_enabled_prefix": "✅ Pro is active for your account.\n\n",
+    "pro_required_prefix": "⭐️ Group tools are a Pro feature.\n\n"
+  },
+
+  "help": {
+    "title": "❓ <b>How this bot helps you</b>\n\n",
+    "body": "📌 What this bot does\n✅ Works in groups & channels\n✅ Tracks joins, leaves & invite links\n✅ Daily / weekly / monthly growth reports\n✅ Organise invite links into campaigns\n✅ Filter members by name, characters, country or phone code\n✅ Force-join required channels before access\n✅ Multi-language: English & French\n\nYour all-in-one Telegram analytics & management bot."
+  },
+
+  "settings": {
+    "buttons": {
+      "language": "🌐 Language",
+      "back": "⬅️ Back"
+    },
+    "title": "Settings",
+    "current_language": "Current language: <b>{lang_name}</b>"
+  },
+
+  "lang": {
+    "title": "🌐 Choose your language",
+    "buttons": {
+      "en": "English 🇬🇧",
+      "fr": "Français 🇫🇷"
+    },
+    "names": {
+      "en": "English",
+      "fr": "French"
+    },
+    "saved": "Language changed to <b>{lang_name}</b>."
+  }
+}

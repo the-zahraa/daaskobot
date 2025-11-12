@@ -1,30 +1,78 @@
 # backend/app/services/db.py
+from __future__ import annotations
+
 import os
-import ssl
-import asyncpg
+import logging
 from typing import Optional
 
-_pool: Optional[asyncpg.Pool] = None
+import asyncpg
+
+logger = logging.getLogger(__name__)
+
+# Global pool
+pool: Optional[asyncpg.Pool] = None
+
+DB_DSN = os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
+
+
+async def init_db() -> None:
+    """Initialize global asyncpg pool once."""
+    global pool
+    if pool is not None:
+        return
+    if not DB_DSN:
+        raise RuntimeError("SUPABASE_DB_URL (or DATABASE_URL) is required for Postgres")
+    logger.info("Connecting to database...")
+    pool = await asyncpg.create_pool(dsn=DB_DSN, min_size=1, max_size=10)
+    logger.info("Database pool ready.")
+
+
+async def close_db() -> None:
+    """Close global pool."""
+    global pool
+    if pool is not None:
+        await pool.close()
+        pool = None
+
 
 async def get_pool() -> asyncpg.Pool:
-    global _pool
-    if _pool is not None:
-        return _pool
+    """Return active pool or raise if not initialized."""
+    if pool is None:
+        raise RuntimeError("DB pool is not initialized. Call init_db() first.")
+    return pool
 
-    dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL") or ""
-    if not dsn:
-        raise RuntimeError("DATABASE_URL (Supabase Postgres) is not set in backend/.env")
 
-    # Supabase requires TLS; relax verification in serverless envs
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+class ConnectionContext:
+    """
+    Async context manager wrapper around the global asyncpg pool.
 
-    _pool = await asyncpg.create_pool(dsn=dsn, ssl=ctx, min_size=1, max_size=5)
-    return _pool
+    Usage:
+        async with get_con() as con:
+            await con.fetch("SELECT 1")
+    """
 
-async def close_pool():
-    global _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
+    def __init__(self) -> None:
+        self._con: Optional[asyncpg.Connection] = None
+
+    async def __aenter__(self) -> asyncpg.Connection:
+        p = await get_pool()
+        self._con = await p.acquire()
+        return self._con
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._con is None:
+            return
+        p = await get_pool()
+        await p.release(self._con)
+        self._con = None
+
+
+def get_con() -> ConnectionContext:
+    """
+    Return an async context manager for a DB connection.
+
+    Example:
+        async with get_con() as con:
+            await con.fetch("SELECT 1")
+    """
+    return ConnectionContext()

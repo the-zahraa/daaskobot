@@ -1,199 +1,299 @@
 # backend/app/handlers/members.py
 from __future__ import annotations
-import re
-from typing import cast, List, Optional, Dict
-from datetime import datetime, timezone
 
-from aiogram import F, Bot
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram import F
+
+import logging
+from datetime import datetime, timezone, date
+from typing import Optional
+
+from aiogram.types import ChatMemberUpdated, Message, ChatPermissions
 from aiogram.enums.chat_type import ChatType
-from aiogram.types.chat_permissions import ChatPermissions
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from ..repositories.required import (
-    set_group_required,
-    unset_group_required,
-    list_group_required,
+from app.db import get_con
+from app.repositories.stats import (
+    inc_join,
+    inc_leave,
+    record_event,
+    upsert_chat_user_index,
 )
-from ..repositories.stats import inc_join, inc_leave, record_event, upsert_chat_user_index
+from app.repositories.required import list_group_targets
+from app.handlers.start import _is_member, force_join_kb_group
+from app.services.i18n import t  # ← i18n
 
+log = logging.getLogger("handlers.members")
 UTC = timezone.utc
 
-def _normalize_target(s: str) -> str:
-    s = s.strip()
-    if s.startswith("-100") and s[4:].isdigit():
-        return s
-    if s.startswith("@"):
-        return s
-    m = re.search(r"(?:t\.me/|https?://t\.me/)([A-Za-z0-9_]+)$", s)
-    if m:
-        return "@"+m.group(1)
-    if re.fullmatch(r"[A-Za-z0-9_]{5,}", s):
-        return "@"+s
-    return s
 
-def _looks_like_url(s: str) -> bool:
-    return bool(re.match(r"^https?://t\.me/(?:\+|joinchat/|[A-Za-z0-9_]+)$", s))
+def _now() -> datetime:
+    return datetime.now(UTC)
 
-def _verify_kb(chat_id: int, user_id: int, missing: List[Dict[str, Optional[str]]]) -> InlineKeyboardMarkup:
-    rows: List[List[InlineKeyboardButton]] = []
-    for item in missing:
-        t = item["target"]
-        url = item.get("join_url")
-        if url:
-            open_url = url
-        elif t and t.startswith("@"):
-            open_url = f"https://t.me/{t[1:]}"
-        else:
-            open_url = "https://t.me/"
-        rows.append([InlineKeyboardButton(text=f"🔗 Open {t}", url=open_url)])
-    rows.insert(0, [InlineKeyboardButton(text="✅ I joined", callback_data=f"gfj_check:{chat_id}:{user_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-async def _is_member(bot: Bot, target: str, user_id: int) -> bool:
+def _today() -> date:
+    return _now().date()
+
+
+async def _ensure_groups_channels_row(chat_id: int) -> None:
+    """
+    Your join_logs.chat_id has a FK to groups_channels(telegram_id).
+    Make sure a row exists to satisfy the FK, but keep it minimal.
+    """
     try:
-        m = await bot.get_chat_member(target, user_id)
-        return m.status in ("creator","administrator","member","restricted")
-    except Exception:
-        return False
-
-def register(dp):
-    async def set_force_join_cmd(msg: Message):
-        if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-            await msg.answer("Use this command in your group."); return
-        if not msg.from_user: return
-        member = await msg.chat.get_member(msg.from_user.id)
-        if member.status not in ("creator","administrator"):
-            await msg.answer("Only group admins can set this."); return
-
-        parts = (msg.text or "").split()
-        if len(parts) < 2:
-            await msg.answer(
-                "Usage:\n"
-                "<code>/set_force_join @PublicChannel</code>\n"
-                "<code>/set_force_join -1001234567890</code>\n"
-                "Private? include invite link:\n"
-                "<code>/set_force_join -1001234567890 https://t.me/+InviteCode</code>"
+        async with get_con() as con:
+            await con.execute(
+                """
+                INSERT INTO public.groups_channels (telegram_id)
+                VALUES ($1)
+                ON CONFLICT (telegram_id) DO NOTHING
+                """,
+                str(chat_id),  # groups_channels.telegram_id is TEXT
             )
-            return
+    except Exception as e:
+        # Don't block attribution if this fails; we'll still try to write campaign_joins
+        log.warning("ensure groups_channels failed for chat=%s: %s", chat_id, e)
 
-        target = _normalize_target(parts[1])
-        if not (target.startswith("@") or (target.startswith("-100") and target[4:].isdigit())):
-            await msg.answer("Provide a valid @username or -100… id as first argument.")
-            return
-        join_url = None
-        if len(parts) >= 3 and _looks_like_url(parts[2]):
-            join_url = parts[2]
 
-        await set_group_required(msg.chat.id, target, msg.from_user.id, join_url)
-        reqs = await list_group_required(msg.chat.id)
-        lines = [f"✅ Added: {target}"]
-        if join_url:
-            lines.append("🔗 Invite link saved.")
-        lines.append("Current requirements:")
-        for r in reqs:
-            lines.append(f"• {r['target']}" + (" (link set)" if r.get('join_url') else ""))
-        await msg.answer("\n".join(lines))
+async def _lookup_campaign_name(chat_id: int, invite_url: str) -> Optional[str]:
+    """
+    Map invite URL -> campaign_name for this chat.
+    Try exact URL, then fallback to invite-code suffix (+CODE or joinchat/CODE).
+    """
+    async with get_con() as con:
+        # Exact URL
+        row = await con.fetchrow(
+            """
+            SELECT campaign_name
+            FROM public.campaign_links
+            WHERE chat_id = $1 AND invite_link = $2
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            chat_id, invite_url
+        )
+        if row:
+            return row["campaign_name"]
 
-    async def unset_force_join_cmd(msg: Message):
-        if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-            await msg.answer("Use this command in your group."); return
-        if not msg.from_user: return
-        member = await msg.chat.get_member(msg.from_user.id)
-        if member.status not in ("creator","administrator"):
-            await msg.answer("Only group admins can unset this."); return
-        parts = (msg.text or "").split(maxsplit=1)
-        if len(parts) >= 2:
-            target = parts[1].strip()
-            await unset_group_required(msg.chat.id, target)
-            await msg.answer(f"✅ Removed: {target}")
+        # Fallback by code suffix
+        row = await con.fetchrow(
+            """
+            WITH url_code AS (
+              SELECT NULLIF(
+                       REGEXP_REPLACE($2, '^.*(?:joinchat/|\\+)([A-Za-z0-9_-]+)$', '\\1'),
+                       $2
+                     ) AS code
+            )
+            SELECT cl.campaign_name
+            FROM public.campaign_links cl, url_code uc
+            WHERE cl.chat_id = $1
+              AND uc.code IS NOT NULL
+              AND NULLIF(
+                    REGEXP_REPLACE(cl.invite_link, '^.*(?:joinchat/|\\+)([A-Za-z0-9_-]+)$', '\\1'),
+                    cl.invite_link
+                  ) = uc.code
+            ORDER BY cl.created_at DESC
+            LIMIT 1
+            """,
+            chat_id, invite_url
+        )
+        return row["campaign_name"] if row else None
+
+
+async def _record_campaign_join(chat_id: int, user_id: int, invite_link_url: str) -> None:
+    """
+    Write-through persistence:
+      • join_logs (audit) — may fail because of FK, but must not block attribution
+      • campaign_joins (final attribution used by Top 30d)
+    """
+    # 1) Try to satisfy FK upfront; ignore failures
+    await _ensure_groups_channels_row(chat_id)
+
+    # 2) Try audit (join_logs). If it fails, log and continue.
+    try:
+        async with get_con() as con:
+            await con.execute(
+                """
+                INSERT INTO public.join_logs (chat_id, user_id, event_type, invite_link, "timestamp")
+                VALUES ($1, $2, 'join', $3, now())
+                """,
+                str(chat_id),  # join_logs.chat_id is TEXT in your DB
+                user_id,
+                invite_link_url,
+            )
+    except Exception as e:
+        log.warning("join_logs insert failed (non-fatal): chat=%s user=%s err=%s", chat_id, user_id, e)
+
+    # 3) Map and write to campaign_joins (this powers Top 30d)
+    try:
+        campaign_name = await _lookup_campaign_name(chat_id, invite_link_url)
+        if campaign_name:
+            async with get_con() as con:
+                await con.execute(
+                    """
+                    INSERT INTO public.campaign_joins (chat_id, user_id, campaign_name, happened_at)
+                    VALUES ($1, $2, $3, now())
+                    """,
+                    chat_id, user_id, campaign_name
+                )
+            log.info("campaign attribution: %r chat=%s user=%s", campaign_name, chat_id, user_id)
         else:
-            await unset_group_required(msg.chat.id)
-            await msg.answer("✅ All requirements cleared.")
-        reqs = await list_group_required(msg.chat.id)
-        if reqs:
-            lines = ["Current requirements:"]
-            for r in reqs:
-                lines.append(f"• {r['target']}" + (" (link set)" if r.get('join_url') else ""))
-            await msg.answer("\n".join(lines))
+            log.info("campaign attribution: none chat=%s user=%s (link=%s)", chat_id, user_id, invite_link_url)
+    except Exception as e:
+        log.warning("campaign_joins insert failed: chat=%s user=%s err=%s", chat_id, user_id, e)
 
-    async def on_member_join(msg: Message):
+
+async def _handle_join(chat_id: int, user_id: int, invite_link_url: Optional[str]) -> None:
+    ts = _now()
+    d = ts.date()
+    await inc_join(chat_id, d)
+    await record_event(chat_id, user_id, ts, "join")
+    await upsert_chat_user_index(chat_id, user_id, True, ts)
+    if invite_link_url:
+        await _record_campaign_join(chat_id, user_id, invite_link_url)
+    # Note: actual restricting + DM happens in handlers where `bot` is available.
+
+
+async def _handle_leave(chat_id: int, user_id: int) -> None:
+    ts = _now()
+    d = ts.date()
+    await inc_leave(chat_id, d)
+    await record_event(chat_id, user_id, ts, "leave")
+    await upsert_chat_user_index(chat_id, user_id, False, ts)
+
+
+# ---- Single source of truth: ChatMemberUpdated only (avoid double counts) ----
+
+async def on_member_update(upd: ChatMemberUpdated) -> None:
+    """
+    Telegram provides `invite_link` here if user joined via a link CREATED BY THIS BOT.
+    """
+    chat_id = upd.chat.id
+    old_status = getattr(upd.old_chat_member, "status", None)
+    new_status = getattr(upd.new_chat_member, "status", None)
+
+    joined_user = getattr(upd.new_chat_member, "user", None)
+    user_id = getattr(joined_user, "id", None)
+    if user_id is None:
+        return
+
+    MEMBERish = {"member", "restricted", "administrator", "creator"}
+    LEFTish = {"left", "kicked"}
+
+    # JOIN
+    if (new_status in MEMBERish) and (old_status not in MEMBERish):
+        invite_url: Optional[str] = None
+        inv = getattr(upd, "invite_link", None)
+        if inv is not None:
+            invite_url = getattr(inv, "invite_link", None) or None
+            if invite_url is not None:
+                invite_url = str(invite_url)
+        if invite_url:
+            log.info("campaign: ChatMemberUpdated invited via link=%s chat=%s user=%s", invite_url, chat_id, user_id)
+
+        await _handle_join(chat_id, user_id, invite_url)
+
+        # 🔒 Immediate restrict + DM if required
+        try:
+            targets = await list_group_targets(chat_id)
+            if targets:
+                try:
+                    perms = ChatPermissions(
+                        can_send_messages=False,
+                        can_send_audios=False,
+                        can_send_documents=False,
+                        can_send_photos=False,
+                        can_send_videos=False,
+                        can_send_video_notes=False,
+                        can_send_voice_notes=False,
+                        can_send_polls=False,
+                        can_send_other_messages=False,
+                        can_add_web_page_previews=False
+                    )
+                    await upd.bot.restrict_chat_member(chat_id, user_id, permissions=perms)
+                except Exception:
+                    pass
+                # DM prompt
+                try:
+                    await upd.bot.send_message(
+                        user_id,
+                        t("force_join.dm_prompt", user_id=user_id, group=getattr(upd.chat, "title", "this group")),
+                        reply_markup=force_join_kb_group(user_id, chat_id, targets),
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return
+
+    # LEAVE
+    if (new_status in LEFTish) and (old_status in MEMBERish):
+        await _handle_leave(chat_id, user_id)
+        return
+
+
+# ---- Public groups fallback (service messages) ----
+def register(dp) -> None:
+    # Primary: chat_member updates
+    dp.chat_member.register(on_member_update)
+
+    # Fallbacks ONLY for public groups (have a username); used when ChatMemberUpdated isn't delivered
+    async def on_new_members_service(msg: Message):
         if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
             return
-        now = datetime.now(tz=UTC)
-        await inc_join(msg.chat.id, msg.date.date())
-        for user in msg.new_chat_members or []:
-            # log event & index
-            await record_event(msg.chat.id, user.id, now, "join")
-            await upsert_chat_user_index(msg.chat.id, user.id, True, now)
-
-        reqs = await list_group_required(msg.chat.id)
-        if not reqs:
+        # Only public groups (username present)
+        if not getattr(msg.chat, "username", None):
             return
-        for user in msg.new_chat_members or []:
-            missing: List[Dict[str, Optional[str]]] = []
-            for r in reqs:
-                t = r["target"]
-                if not await _is_member(cast(Bot, msg.bot), t, user.id):
-                    missing.append(r)
-            if not missing:
+        users = msg.new_chat_members or []
+        for u in users:
+            if not u or u.is_bot:
                 continue
+
+            await _handle_join(msg.chat.id, u.id, invite_link_url=None)
+
+            # Restrict + DM as in on_member_update
+            # (No outer try without except — errors handled per call)
             try:
-                await msg.chat.restrict(user.id, permissions=ChatPermissions(can_send_messages=False))
+                targets = await list_group_targets(msg.chat.id)
             except Exception:
-                pass
-            lines = [f"👋 {user.full_name}, please join all required before chatting:"]
-            lines += [f"• {r['target']}" for r in missing]
-            lines.append("Tap “I joined” after joining — I’ll unmute you automatically.")
-            await msg.answer("\n".join(lines), reply_markup=_verify_kb(msg.chat.id, user.id, missing))
+                targets = []
 
-    async def verify_after_join(cb: CallbackQuery):
-        if not cb.from_user or not cb.data:
-            await cb.answer(); return
-        try:
-            _, chat_id_s, user_id_s = cb.data.split(":")
-            chat_id = int(chat_id_s)
-            target_user_id = int(user_id_s)
-        except Exception:
-            await cb.answer(); return
-        if cb.from_user.id != target_user_id:
-            await cb.answer("This button isn’t for you.", show_alert=True)
-            return
-        reqs = await list_group_required(chat_id)
-        missing = []
-        for r in reqs:
-            if not await _is_member(cast(Bot, cb.bot), r["target"], cb.from_user.id):
-                missing.append(r["target"])
-        if missing:
-            await cb.answer("Still missing some memberships. Join all and tap again.", show_alert=True)
-            return
-        try:
-            await cb.bot.restrict_chat_member(
-                chat_id=chat_id,
-                user_id=cb.from_user.id,
-                permissions=ChatPermissions(can_send_messages=True)
-            )
-        except Exception:
-            pass
-        try:
-            if cb.message:
-                await cb.message.edit_text("✅ Verified! You can chat now.", reply_markup=None)
-        except Exception:
-            pass
-        await cb.answer("Verified.")
+            if targets:
+                # Restrict
+                try:
+                    perms = ChatPermissions(
+                        can_send_messages=False,
+                        can_send_audios=False,
+                        can_send_documents=False,
+                        can_send_photos=False,
+                        can_send_videos=False,
+                        can_send_video_notes=False,
+                        can_send_voice_notes=False,
+                        can_send_polls=False,
+                        can_send_other_messages=False,
+                        can_add_web_page_previews=False
+                    )
+                    await msg.bot.restrict_chat_member(msg.chat.id, u.id, permissions=perms)
+                except Exception:
+                    pass
 
-    async def on_member_leave(msg: Message):
+                # DM prompt
+                try:
+                    await msg.bot.send_message(
+                        u.id,
+                        t("force_join.dm_prompt", user_id=u.id, group=(msg.chat.title or "this group")),
+                        reply_markup=force_join_kb_group(u.id, msg.chat.id, targets),
+                    )
+                except Exception:
+                    pass
+
+    async def on_left_member_service(msg: Message):
         if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
             return
-        now = datetime.now(tz=UTC)
-        await inc_leave(msg.chat.id, msg.date.date())
-        if msg.left_chat_member:
-            await record_event(msg.chat.id, msg.left_chat_member.id, now, "leave")
-            await upsert_chat_user_index(msg.chat.id, msg.left_chat_member.id, False, now)
+        if not getattr(msg.chat, "username", None):
+            return
+        u = msg.left_chat_member
+        if not u or u.is_bot:
+            return
+        await _handle_leave(msg.chat.id, u.id)
 
-    dp.message.register(set_force_join_cmd, Command("set_force_join"))
-    dp.message.register(unset_force_join_cmd, Command("unset_force_join"))
-    dp.message.register(on_member_join, F.new_chat_members)
-    dp.message.register(on_member_leave, F.left_chat_member)
-    dp.callback_query.register(verify_after_join, F.data.startswith("gfj_check:"))
+    dp.message.register(on_new_members_service, F.new_chat_members)
+    dp.message.register(on_left_member_service, F.left_chat_member)

@@ -1,0 +1,381 @@
+{
+  "common": {
+    "back": "⬅️ Retour"
+  },
+
+  "ui": {
+    "owner": {
+      "admin_panel": "👑 Ouvrir le panneau d’administration",
+      "my_dashboard": "🧭 Ouvrir mon tableau de bord"
+    }
+  },
+
+  "dash": {
+    "buttons": {
+      "overview": "🏠 Aperçu",
+      "linked_chats": "🔗 Chats liés",
+      "analytics": "📈 Analyses",
+      "reports": "🧾 Rapports",
+      "campaigns": "📣 Campagnes",
+      "group_tools": "📎 Outils de groupe",
+      "help": "❓ Aide",
+      "settings": "⚙️ Paramètres"
+    }
+  },
+
+  "request_phone": {
+    "button": "📱 Partager le numéro de téléphone",
+    "prompt": "Avant de continuer, merci de partager votre numéro de téléphone."
+  },
+
+  "access": {
+    "denied_geofence": "Désolé, ce bot est actuellement réservé aux numéros européens (+30 à +59) ou aux numéros anonymes Telegram (+888)."
+  },
+
+  "contact": {
+    "thanks_in": "Merci ! Vous êtes prêt ✅\n\nUtilisez le menu ci-dessous pour explorer votre tableau de bord."
+  },
+
+  "force_join": {
+    "open_target": "🔗 Ouvrir {target}",
+    "ijoined_button": "✅ J’ai rejoint",
+    "prompt": "🔒 Merci de rejoindre les canaux / groupes requis pour continuer.",
+    "prompt_private_aware": "🔒 Pour utiliser ce bot, vous devez d’abord rejoindre les canaux / groupes requis.\n\nRejoignez-les puis touchez <b>J’ai rejoint</b>.",
+    "verified": "Merci ! Vérification effectuée ✅",
+    "not_joined_alert": "Vous n’avez pas encore rejoint tous les canaux requis. Rejoignez-les puis réessayez.",
+    "group_still_need": "🔒 Vous devez encore rejoindre toutes les cibles, puis appuyer sur <b>J’ai rejoint</b>.",
+    "group_verified": "Parfait ! Vous êtes vérifié pour ce groupe ✅",
+    "dm_prompt": "🔒 Vous devez rejoindre les canaux / groupes requis pour pouvoir écrire dans <b>{group}</b>.\nRejoignez toutes les cibles puis touchez <b>J’ai rejoint</b>.",
+    "group_notice": "{mention} vous devez rejoindre les canaux / groupes requis. Ouvrez un DM avec moi pour obtenir les boutons."
+  },
+
+  "start": {
+    "owner_welcome": "Bienvenue, propriétaire.\n\nChoisissez une option :",
+    "ask_phone": "Avant de continuer, merci de partager votre numéro de téléphone."
+  },
+
+  "dashboard": {
+    "title": "🧭 <b>Tableau de bord</b>",
+    "plan": "• Votre abonnement : <b>{plan}</b>",
+    "tip": "Utilisez le menu ci-dessous pour naviguer."
+  },
+
+  "overview": {
+    "title": "🏠 <b>Aperçu</b>",
+    "current_plan": "• Abonnement actuel : <b>{plan}</b>"
+  },
+
+  "chats": {
+    "linked_title": "🔗 <b>Chats liés</b>",
+    "none_tip": "Aucun chat pour l’instant.\n\nAstuce : ajoutez le bot comme admin dans un groupe / canal, puis utilisez /link (group/channel) ou /link_channel en privé.",
+    "item": "• <code>{cid}</code> — {ctype} — {title}",
+    "more": "… et {n} de plus"
+  },
+
+  "errors": {
+    "no_tenant": "Aucun espace de travail trouvé pour l’instant. Démarrez le bot en privé et liez un chat d’abord."
+  },
+
+  "analytics": {
+    "none_chats": "📈 Analyses\nAucun chat lié pour l’instant.",
+    "select_chat": "Sélectionnez un chat pour voir les analyses :",
+    "title_30d": "📈 <b>Analyses (30 derniers jours)</b>",
+    "total_joins": "• Total des arrivées : <b>{n}</b>",
+    "total_leaves": "• Total des départs : <b>{n}</b>",
+    "messages_7d": "• Messages (7 j) : <b>{n}</b>",
+    "avg_dau_7d": "• Utilisateurs actifs moyens (7 j) : <b>{avg}</b>",
+    "peak_hour": "• Heure de pointe (Europe/Helsinki, 30 j) : <b>{hour} h</b> — {count} messages",
+    "top_user_30d": "• Utilisateur le plus actif (30 j) : <b>{user}</b> — {count} messages",
+    "pro_required_note": "⭐️ Messages, DAU, heure de pointe et top utilisateurs sont des fonctions <b>Pro</b>. Utilisez /pro pour passer à l’offre Pro.",
+    "last7_header": "\n7 derniers jours (arrivées / départs) :",
+    "day_line": "{date} : +{joins} / -{leaves}"
+  },
+
+  "reports": {
+    "none_chats": "🧾 Rapports\nAucun chat lié pour l’instant.",
+    "select_chat": "🧾 Sélectionnez un chat pour générer un rapport PDF :",
+    "chat_button": "{title} ({type})",
+    "errors": {
+      "pro_only": "Les rapports sont réservés aux abonnés Pro."
+    },
+    "ui": {
+      "invalid_request": "Requête de rapport invalide.",
+      "not_allowed": "Vous n’avez pas accès à ce chat.",
+      "generating": "🧾 Génération de votre rapport PDF…",
+      "failed": "Impossible de créer le rapport. Erreur : {err}",
+      "sent_caption": "📄 Rapport pour <b>{title}</b> · {days} dernier(s) jour(s)",
+      "done": "Rapport prêt ✅",
+      "sent_no_file": "Le rapport a été généré, mais l’envoi du fichier a échoué."
+    },
+    "cover": {
+      "title": "Rapport du chat",
+      "subtitle": "Période : {start}–{end}",
+      "chat": "Chat : {title}",
+      "generated": "Généré : {dt} UTC"
+    },
+    "kpi": {
+      "title": "Vue d’ensemble",
+      "joins": "Arrivées",
+      "leaves": "Départs",
+      "net": "Croissance nette",
+      "messages": "Messages (30 j)",
+      "avg_dau": "DAU moyen (30 j)",
+      "peak_hour": "Heure de pointe (30 j)",
+      "top_user": "Utilisateur top (30 j) : {top_user_id} — {count} messages",
+      "window": "Derniers {n} jours",
+      "window30": "30 derniers jours",
+      "window30_users": "30 derniers jours (utilisateurs)",
+      "peak_count": "{n} messages"
+    },
+    "series": {
+      "joins_leaves": "Arrivées vs départs (30 j)",
+      "messages": "Messages (30 j)",
+      "dau": "Utilisateurs actifs quotidiens (30 j)"
+    },
+    "axis": {
+      "day": "Jour",
+      "count": "Nombre",
+      "users": "Utilisateurs"
+    },
+    "campaigns": {
+      "title": "Meilleures campagnes (30 j)",
+      "ylabel": "Arrivées"
+    },
+    "top_talkers": {
+      "title": "Top bavards (30 j)",
+      "header_user": "ID utilisateur",
+      "header_msgs": "Messages"
+    }
+  },
+
+  "admin": {
+    "not_auth": "Vous n’êtes pas autorisé à ouvrir le panneau d’administration.",
+    "panel": "👑 <b>Panneau d’administration</b>\nChoisissez ce que vous souhaitez gérer :",
+    "overview_title": "👑 <b>Vue d’ensemble admin</b>",
+    "overview_lines": "• Utilisateurs : <b>{users}</b>\n• Utilisateurs Pro : <b>{premium}</b>\n• Espaces de travail : <b>{tenants}</b>\n• Chats liés : <b>{chats}</b>",
+    "kb": {
+      "back_to_dashboard": "👤 Mon tableau de bord",
+      "overview": "📊 Vue d’ensemble",
+      "tenants": "🏢 Espaces de travail",
+      "search_tenants": "🔎 Rechercher",
+      "broadcast": "📨 Diffusion globale",
+      "force_join": "🔒 Force-join global",
+      "plans": "💳 Offres & tarifs",
+      "settings": "⚙️ Paramètres admin"
+    },
+    "tenants": {
+      "prev": "⬅️ Précédent",
+      "next": "Suivant ➡️",
+      "export_pdf": "📄 Exporter tout (PDF)",
+      "back": "⬅️ Retour à l’admin",
+      "back_to_tenant": "⬅️ Retour à la liste",
+      "none": "Aucun espace de travail pour l’instant.",
+      "title_latest": "🏢 Derniers espaces de travail :",
+      "search_prompt": "Envoyez un nom, un ID propriétaire ou une partie de texte pour rechercher un espace de travail.",
+      "search_title": "🔎 Résultats pour « {q} » :",
+      "no_results": "Aucun espace de travail ne correspond à votre recherche.",
+      "export_caption": "📄 Tous les espaces de travail avec statistiques de base.",
+      "export_done": "Export envoyé.",
+      "tenant_not_found": "Espace de travail introuvable.",
+      "tenant_title": "🏢 Détails de l’espace de travail",
+      "tenant_lines": "• Nom : <b>{name}</b>\n• ID Telegram du propriétaire : <code>{owner}</code>\n• Créé le : <b>{created}</b>",
+      "linked_none": "Cet espace de travail n’a pas encore de chats liés.",
+      "linked_title": "🔗 Chats liés à cet espace de travail :",
+      "linked_more": "… et {n} chats de plus",
+      "force_title": "🔒 Canaux / groupes requis globalement\n\n",
+      "force_none": "Aucun canal global requis n’est défini.",
+      "remove": "❌ Supprimer {target}",
+      "add_target": "➕ Ajouter un canal requis",
+      "back_overview": "⬅️ Retour à l’admin",
+      "add_prompt": "Envoyez une ou plusieurs lignes.\nChaque ligne doit être un @nomdutilisateur, un ID -100… ou un lien t.me complet.",
+      "invalid_lines": "Je n’ai trouvé aucune cible valide dans votre message.",
+      "force_added": "Ajouté :\n{lines}",
+      "force_list_head": "Canaux requis actuels :\n",
+      "force_no_targets": "Aucun canal requis n’est configuré.",
+      "current_list": "Liste actuelle :\n{lines}",
+      "force_removed_now": "Supprimé.\n\n{current}",
+      "back_overview_short": "⬅️ Retour"
+    },
+    "settings_placeholder": "Les paramètres admin seront ajoutés ici plus tard.",
+    "plans_fallback": "L’interface des offres n’est pas disponible pour le moment."
+  },
+
+  "tenant_ui": {
+    "kb": {
+      "linked_chats": "🔗 Voir les chats liés"
+    }
+  },
+
+  "ap": {
+  "home_title": "📦 Offres & tarifs (Admin)",
+  "home_btn_list": "📜 Voir toutes les offres",
+  "home_btn_create_defaults": "✨ Créer les offres PRO par défaut",
+  "home_btn_create_custom": "➕ Créer une nouvelle offre",
+  "home_btn_refresh": "🔄 Actualiser",
+  "btn_back": "⬅️ Retour",
+  "btn_back_admin": "🏠 Retour au panneau admin",
+
+  "list_title": "📜 Toutes les offres",
+  "list_none": "Aucune offre trouvée. Utilisez les boutons ci-dessous pour créer les offres par défaut ou une nouvelle offre.",
+  "plan_row": "{code} — {price}⭐ ({active})",
+
+  "view_block": "<b>{title}</b> ({code})\n{desc}\n\nDurée : {days} jours\nPrix : {price}⭐\nStatut : {status}",
+  "view_status_active": "Active",
+  "view_status_inactive": "Inactive",
+  "view_delta_minus50": "-50⭐",
+  "view_delta_minus10": "-10⭐",
+  "view_delta_plus10": "+10⭐",
+  "view_delta_plus50": "+50⭐",
+  "view_set_custom": "✏️ Prix personnalisé",
+  "view_toggle": "{label}",
+  "view_back_to_list": "⬅️ Retour aux offres",
+
+  "not_allowed": "Vous n’êtes pas autorisé à gérer les offres.",
+  "plan_not_found": "Offre introuvable.",
+  "invalid_delta": "Delta de prix invalide.",
+  "defaults_done": "Les offres par défaut ont été créées/mises à jour.",
+
+  "send_custom_prompt": "Envoyez un nouveau prix en Stars pour l’offre <b>{code}</b>.",
+  "send_custom_invalid": "Veuillez envoyer un entier positif valide.",
+
+  "create_ask_code": "Envoyez un code d’offre (ex. PRO_MONTH_PLUS). Utilisez uniquement lettres, chiffres et underscores, sans espace.",
+  "create_invalid_code": "Code invalide. Utilisez seulement lettres, chiffres et underscores, sans espace.",
+  "create_ask_title": "Envoyez un titre lisible pour l’offre <b>{code}</b>.",
+  "create_invalid_title": "Le titre ne peut pas être vide.",
+  "create_ask_description": "Envoyez une courte description pour cette offre (ou « - » pour aucune).",
+  "create_ask_price": "Envoyez le prix en Stars (entier).",
+  "create_invalid_price": "Prix invalide. Envoyez un entier positif ou nul.",
+  "create_ask_duration": "Envoyez la durée en jours (entier > 0).",
+  "create_invalid_duration": "Durée invalide. Envoyez un entier strictement positif.",
+  "create_done": "✅ L’offre <b>{code}</b> a été créée/mise à jour.\nDurée : {days} jours\nPrix : {price}⭐"
+},
+
+  "bcast": {
+    "kb_compose": "✏️ Composer une diffusion",
+    "kb_back": "⬅️ Retour à l’admin",
+    "open": "📨 <b>Diffusion à tous les utilisateurs</b>\n\nVous pouvez envoyer un message unique à tous les utilisateurs qui ont démarré le bot.",
+    "compose_prompt": "Envoyez le texte que vous souhaitez diffuser.\nUtilisez /cancel pour annuler.",
+    "cancelled": "Diffusion annulée.",
+    "send_text_required": "Veuillez d’abord envoyer du texte.",
+    "sending": "Envoi de votre diffusion…",
+    "done": "Terminé ✅ Envoyé : <b>{sent}</b>, échecs : <b>{failed}</b>."
+  },
+
+  "camp": {
+    "buttons": {
+      "back": "⬅️ Retour",
+      "new_quick": "➕ Nouveau lien rapide",
+      "list": "📋 Liens existants",
+      "top": "🏆 Meilleures campagnes",
+      "open_invite": "🔗 Ouvrir l’invitation"
+    },
+    "no_chats": "Vous n’avez encore aucun chat lié.\nLiez d’abord un groupe ou un canal.",
+    "pick_chat": "Choisissez un chat pour gérer les liens de campagne :",
+    "menu_head": "📣 <b>Liens de campagne</b>\nCréez des liens d’invitation nommés et voyez lesquels apportent des membres.",
+    "public_block": "Le suivi des campagnes fonctionne uniquement dans les groupes / canaux privés où ce bot peut créer des liens d’invitation.",
+    "list": {
+      "none": "Aucun lien de campagne pour ce chat pour l’instant.",
+      "title": "📋 <b>Liens de campagne existants</b> :"
+    },
+    "stats": {
+      "none": "Aucune arrivée depuis les liens de campagne sur les 30 derniers jours.",
+      "title": "🏆 <b>Meilleures campagnes (30 j)</b>"
+    },
+    "create": {
+      "cant_create": "Impossible de créer un nouveau lien d’invitation.\nErreur : {err}",
+      "created": "✅ Nouveau lien de campagne créé :\n\nNom : <b>{label}</b>\nLien :\n<code>{url}</code>"
+    },
+    "pro_gate": "Les statistiques de campagne sont une fonctionnalité <b>Pro</b>.",
+    "admin_only": "Seuls les admins du chat peuvent gérer les liens de campagne ici.",
+    "cmd": {
+      "help_free": "La commande /campaigns explique comment utiliser le suivi des campagnes.\n\nPassez à Pro pour débloquer les statistiques complètes.",
+      "help_pro": "Utilisez le menu intégré (Campagnes) pour gérer les liens et voir les statistiques.\n\nCette commande est simplement un raccourci vers le texte d’aide.",
+      "clear_wrong_place": "Lancez /campaigns_clear dans un groupe, supergroupe ou canal.",
+      "admins_only": "Seuls les admins peuvent effacer les liens de campagne de ce chat.",
+      "cleared": "Tous les liens de campagne de ce chat ont été effacés."
+    }
+  },
+
+  "link": {
+    "admins_only_link": "Seuls les admins du groupe peuvent lier ce chat.",
+    "couldnt_verify_admin": "Je n’ai pas pu vérifier votre statut d’admin, mais je vais tenter de lier le chat quand même.",
+    "tenant_fail": "Impossible de créer votre espace de travail. Veuillez réessayer plus tard.",
+    "channel_redirect": "Lancez /link_channel dans un DM avec moi pour lier ce canal.",
+    "usage": "Utilisation : /link_channel @nom_du_canal\nou : /link_channel -1001234567890",
+    "not_found": "Je n’ai pas trouvé ce chat. Vérifiez le nom d’utilisateur / l’ID.",
+    "wrong_type": "Ce n’est pas un canal. Cette commande est réservée aux canaux.",
+    "make_me_admin": "Ajoutez-moi d’abord comme admin dans ce canal, puis réessayez.",
+    "cant_verify_my_admin": "Je n’ai pas pu vérifier mon statut d’admin dans ce canal.",
+    "tenant_fail_you": "Impossible de créer votre espace de travail. Veuillez réessayer plus tard.",
+    "linked_ok": "Ce groupe est maintenant lié à votre espace de travail ✅",
+    "linked_channel": "Le canal <b>{title}</b> est maintenant lié à votre espace de travail ✅"
+  },
+
+  "gt": {
+    "title": "📎 <b>Outils de groupe</b>",
+    "pro_gate": "Les outils de groupe sont une fonctionnalité <b>Pro</b>. Passez à l’offre Pro pour les débloquer.",
+    "none_chats": "Aucun groupe lié pour l’instant.\nLiez d’abord un groupe, puis revenez ici.",
+    "pick_group": "Choisissez un groupe pour configurer le force-join :",
+    "buttons": {
+      "back": "⬅️ Retour",
+      "add": "➕ Ajouter un canal requis",
+      "list": "📋 Voir les canaux requis",
+      "clear": "🗑 Tout effacer",
+      "how": "ℹ️ Fonctionnement",
+      "cancel": "✖️ Annuler"
+    },
+    "errors": {
+      "pro_only": "Les outils de groupe sont disponibles uniquement avec l’offre Pro.",
+      "admin_only": "Seuls les admins du groupe peuvent gérer le force-join.",
+      "need_valid": "Envoyez un @canal valide, un ID -100… ou un lien t.me complet."
+    },
+    "menu_lead": "Configurez les canaux / groupes que les membres doivent rejoindre avant de pouvoir parler.",
+    "list": {
+      "none": "Aucun canal requis pour ce groupe pour l’instant.",
+      "title": "📋 Canaux / groupes requis :"
+    },
+    "clear": {
+      "ok": "Tous les canaux requis pour ce groupe ont été supprimés."
+    },
+    "how": {
+      "body": "Fonctionnement :\n\n1. Ajoutez un ou plusieurs canaux / groupes requis.\n2. Les nouveaux membres sont muets lorsqu’ils rejoignent le groupe.\n3. Ils reçoivent un DM avec les boutons pour rejoindre vos cibles.\n4. Une fois qu’ils ont rejoint, ils touchent « J’ai rejoint » pour être démutés."
+    },
+    "add": {
+      "prompt": "Envoyez un @nom d’utilisateur, un ID -100 ou un lien t.me à ajouter comme requis pour ce groupe.",
+      "added": "Ajouté : <b>{target}</b>\n\nVous pouvez en ajouter d’autres ou revenir au menu."
+    }
+  },
+
+  "group_tools": {
+    "help": "Avec les outils de groupe vous pouvez :\n\n• Exiger que les utilisateurs rejoignent certains canaux avant de parler\n• Mettre automatiquement en sourdine les nouveaux membres jusqu’à ce qu’ils rejoignent\n• Suivre les arrivées et départs pour vos groupes\n\nOuvrez ceci dans un groupe lié pour configurer les règles.",
+    "pro_enabled_prefix": "✅ L’offre Pro est active pour votre compte.\n\n",
+    "pro_required_prefix": "⭐️ Les outils de groupe sont une fonctionnalité Pro.\n\n"
+  },
+
+  "help": {
+    "title": "❓ <b>Ce que ce bot peut faire pour vous</b>\n\n",
+    "body": "📌 Ce que fait ce bot\n✅ Fonctionne dans les groupes & canaux\n✅ Suit les arrivées, départs & liens d’invitation\n✅ Rapports de croissance quotidiens / hebdomadaires / mensuels\n✅ Organise les liens d’invitation en campagnes\n✅ Filtre les membres par nom, caractères, pays ou indicatif\n✅ Force-join de canaux requis avant l’accès\n✅ Multilingue : anglais & français\n\nVotre bot tout-en-un d’analytique & de gestion Telegram."
+  },
+
+  "settings": {
+    "buttons": {
+      "language": "🌐 Langue",
+      "back": "⬅️ Retour"
+    },
+    "title": "Paramètres",
+    "current_language": "Langue actuelle : <b>{lang_name}</b>"
+  },
+
+  "lang": {
+    "title": "🌐 Choisissez votre langue",
+    "buttons": {
+      "en": "English 🇬🇧",
+      "fr": "Français 🇫🇷"
+    },
+    "names": {
+      "en": "Anglais",
+      "fr": "Français"
+    },
+    "saved": "Langue changée pour <b>{lang_name}</b>."
+  }
+}

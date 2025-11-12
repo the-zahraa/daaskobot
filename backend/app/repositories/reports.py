@@ -1,166 +1,111 @@
-# backend/app/repositories/reports.py
 from __future__ import annotations
+from typing import Optional, cast
 
-from typing import List, Tuple, Optional
-from app.services.db import get_pool
+from aiogram import Router, F, Bot
+from aiogram.types import CallbackQuery, BufferedInputFile
+from aiogram.exceptions import TelegramBadRequest
 
+from app.db import get_con
+from app.repositories.subscriptions import get_user_subscription_status
+from app.services.i18n import t
+from app.services.reports import build_report_pdf_bytes
 
-# ---------- Aggregations ----------
+router = Router()
 
-async def agg_daily(chat_id: int, days: int = 30) -> List[Tuple[str, int, int, int]]:
-    """
-    Return rows: (YYYY-MM-DD, joins, leaves, net) for the last `days`.
-    Uses chat_members_daily; fills missing days with zeros.
-    """
-    pool = await get_pool()
-    async with pool.acquire() as con:
-        rows = await con.fetch(
+async def _user_owns_chat(user_tg_id: int, chat_id: int) -> bool:
+    async with get_con() as con:
+        row = await con.fetchrow(
             """
-            with days as (
-              select generate_series((current_date - ($2::int - 1))::date, current_date, interval '1 day')::date d
-            ),
-            a as (
-              select day::date d, sum(joins) j, sum(leaves) l
-              from chat_members_daily
-              where chat_id = $1
-              group by 1
-            )
-            select to_char(d, 'YYYY-MM-DD') as dd,
-                   coalesce(a.j,0) as joins,
-                   coalesce(a.l,0) as leaves,
-                   coalesce(a.j,0) - coalesce(a.l,0) as net
-            from days
-            left join a on a.d = days.d
-            order by d desc
+            SELECT 1
+            FROM public.chats c
+            JOIN public.user_tenants ut ON ut.tenant_id = c.tenant_id
+            WHERE ut.tg_id = $1 AND c.tg_chat_id = $2
+            LIMIT 1
             """,
-            chat_id, days,
+            user_tg_id, chat_id
         )
-        return [(r["dd"], int(r["joins"]), int(r["leaves"]), int(r["net"])) for r in rows]
+    return bool(row)
 
+async def _get_chat_title(chat_id: int) -> Optional[str]:
+    async with get_con() as con:
+        row = await con.fetchrow("SELECT title FROM public.chats WHERE tg_chat_id = $1 LIMIT 1", chat_id)
+    return (row and row["title"]) or None
 
-async def agg_weekly(chat_id: int, weeks: int = 12) -> List[Tuple[str, int, int, int]]:
-    """
-    Return rows: (ISO-YYYY-WW, joins, leaves, net) for the last `weeks`.
-    """
-    pool = await get_pool()
-    async with pool.acquire() as con:
-        rows = await con.fetch(
-            """
-            select to_char(day, 'IYYY-IW') as wk,
-                   sum(joins) as j, sum(leaves) as l,
-                   sum(joins) - sum(leaves) as net
-            from chat_members_daily
-            where chat_id = $1
-              and day >= (current_date - ($2::int * 7))
-            group by 1
-            order by 1 desc
-            """,
-            chat_id, weeks,
+@router.callback_query(F.data.startswith("rep:chat:"))
+async def on_generate_report(cb: CallbackQuery):
+    if not cb.from_user:
+        return await cb.answer()
+
+    parts = (cb.data or "").split(":")
+    try:
+        chat_id = int(parts[2])
+        days = int(parts[3]) if len(parts) >= 4 else 30
+    except Exception:
+        try:
+            await cb.answer(t("reports.ui.invalid_request", user_id=(cb.from_user and cb.from_user.id)), show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
+
+    uid = cb.from_user.id
+
+    if not await _user_owns_chat(uid, chat_id):
+        try:
+            await cb.answer(t("reports.ui.not_allowed", user_id=uid), show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
+
+    plan = await get_user_subscription_status(uid)
+    if str(plan).lower() != "pro":
+        try:
+            await cb.answer(t("reports.errors.pro_only", user_id=uid), show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
+
+    title = await _get_chat_title(chat_id)
+
+    try:
+        if cb.message:
+            await cb.message.edit_text(t("reports.ui.generating", user_id=uid))
+    except Exception:
+        pass
+
+    try:
+        pdf_bytes, filename = await build_report_pdf_bytes(
+            chat_id=chat_id,
+            chat_title=title,
+            days=days,
+            is_pro=True,            # double-enforced inside service
+            user_id=uid,
+            lang=None,              # service will resolve from user if set
+            tz="Europe/Helsinki",
         )
-        return [(r["wk"], int(r["j"]), int(r["l"]), int(r["net"])) for r in rows]
+    except PermissionError as e:
+        try:
+            await cb.message.edit_text(str(e))
+        except Exception:
+            pass
+        return
+    except Exception as e:
+        try:
+            await cb.message.edit_text(t("reports.ui.failed", user_id=uid, err=str(e)))
+        except Exception:
+            pass
+        return
 
-
-async def agg_monthly(chat_id: int, months: int = 12) -> List[Tuple[str, int, int, int]]:
-    """
-    Return rows: (YYYY-MM, joins, leaves, net) for the last `months`.
-    """
-    pool = await get_pool()
-    async with pool.acquire() as con:
-        rows = await con.fetch(
-            """
-            select to_char(day, 'YYYY-MM') as ym,
-                   sum(joins) as j, sum(leaves) as l,
-                   sum(joins) - sum(leaves) as net
-            from chat_members_daily
-            where chat_id = $1
-              and day >= (date_trunc('month', current_date) - (($2::int - 1) * interval '1 month'))
-            group by 1
-            order by 1 desc
-            """,
-            chat_id, months,
-        )
-        return [(r["ym"], int(r["j"]), int(r["l"]), int(r["net"])) for r in rows]
-
-
-async def peak_hours(chat_id: int, days: int = 7) -> List[Tuple[int, int]]:
-    """
-    Return list of (hour_0_23, join_events_count) for the last `days`.
-    Uses member_events (kind='join').
-    """
-    pool = await get_pool()
-    async with pool.acquire() as con:
-        rows = await con.fetch(
-            """
-            select extract(hour from happened_at at time zone 'UTC')::int as hh,
-                   count(*) as c
-            from member_events
-            where chat_id = $1
-              and kind = 'join'
-              and happened_at >= (now() - ($2::int || ' days')::interval)
-            group by 1
-            order by 1 asc
-            """,
-            chat_id, days,
-        )
-        return [(int(r["hh"]), int(r["c"])) for r in rows]
-
-
-# ---------- Filtering ----------
-
-async def filter_members(
-    chat_id: int,
-    name_q: Optional[str] = None,
-    phone_country: Optional[str] = None,
-    has_phone_only: bool = False,
-) -> List[Tuple[int, str, Optional[str], Optional[str]]]:
-    """
-    Return up to 500 rows of (tg_id, full_name, username, phone_e164) for users seen in this chat.
-
-    Notes:
-    - Results are based on chat_user_index (who we’ve seen join/leave) joined with users (those who DM’d the bot).
-    - Filters:
-        name_q: case-insensitive match on first_name + last_name
-        phone_country: e.g., '+33', '+98' (prefix match)
-        has_phone_only: only users who shared a phone
-    """
-    pool = await get_pool()
-    async with pool.acquire() as con:
-        conds = ["c.chat_id = $1"]
-        args = [chat_id]
-        i = 2
-
-        if has_phone_only:
-            conds.append("u.phone_e164 is not null")
-
-        if phone_country:
-            conds.append(f"u.phone_e164 like ${i}")
-            args.append(phone_country + "%")
-            i += 1
-
-        if name_q:
-            conds.append(f"(coalesce(u.first_name,'') || ' ' || coalesce(u.last_name,'')) ilike ${i}")
-            args.append(f"%{name_q}%")
-            i += 1
-
-        sql = f"""
-            select
-              c.tg_id,
-              nullif(trim(coalesce(u.first_name,'') || ' ' || coalesce(u.last_name,'')), '') as full_name,
-              u.username,
-              u.phone_e164
-            from chat_user_index c
-            left join users u on u.tg_id = c.tg_id
-            where {' and '.join(conds)}
-            order by c.last_seen_at desc
-            limit 500
-        """
-        rows = await con.fetch(sql, *args)
-        return [
-            (
-                int(r["tg_id"]),
-                r["full_name"] or "",
-                r["username"],
-                r["phone_e164"],
-            )
-            for r in rows
-        ]
+    try:
+        file = BufferedInputFile(pdf_bytes, filename=filename)
+        caption = t("reports.ui.sent_caption", user_id=uid, title=(title or str(chat_id)), days=days)
+        bot = cast(Bot, cb.bot)
+        await bot.send_document(cb.message.chat.id, document=file, caption=caption)
+        try:
+            await cb.answer(t("reports.ui.done", user_id=uid))
+        except TelegramBadRequest:
+            pass
+    except Exception:
+        try:
+            await cb.message.edit_text(t("reports.ui.sent_no_file", user_id=uid))
+        except Exception:
+            pass

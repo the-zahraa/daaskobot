@@ -1,4 +1,3 @@
-# backend/app/handlers/broadcast.py
 import os
 import asyncio
 from typing import cast, List
@@ -10,6 +9,7 @@ from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKe
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest, TelegramConflictError
 
 from ..repositories.users import list_all_user_ids
+from ..services.i18n import t  # i18n
 
 _owner_env = os.getenv("OWNER_ID", "").strip()
 try:
@@ -17,17 +17,30 @@ try:
 except ValueError:
     OWNER_ID = None
 
+
 class BroadcastStates(StatesGroup):
     waiting_text = State()
 
-def broadcast_kb() -> InlineKeyboardMarkup:
+
+def broadcast_kb(user_id: int) -> InlineKeyboardMarkup:
+    """
+    Small local menu for the broadcast flow:
+
+      • Compose broadcast
+      • Back to admin panel
+
+    So after /cancel or after finishing a send, the last message on screen always
+    has a way back to the admin panel.
+    """
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Compose broadcast", callback_data="admin_broadcast_compose")],
-        [InlineKeyboardButton(text="⬅️ Back", callback_data="admin_overview")],
+        [InlineKeyboardButton(text=t("bcast.kb_compose", user_id=user_id), callback_data="admin_broadcast_compose")],
+        [InlineKeyboardButton(text=t("bcast.kb_back", user_id=user_id), callback_data="admin_overview")],
     ])
+
 
 def _authorized(user_id: int | None) -> bool:
     return OWNER_ID is not None and user_id == OWNER_ID
+
 
 async def _send_in_chunks(bot: Bot, user_ids: List[int], text: str) -> tuple[int, int]:
     sent = 0
@@ -35,7 +48,7 @@ async def _send_in_chunks(bot: Bot, user_ids: List[int], text: str) -> tuple[int
     CHUNK = 30
     PAUSE = 1.2
     for i in range(0, len(user_ids), CHUNK):
-        batch = user_ids[i:i+CHUNK]
+        batch = user_ids[i:i + CHUNK]
         tasks = [bot.send_message(chat_id=uid, text=text, disable_web_page_preview=True) for uid in batch]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for r in results:
@@ -46,45 +59,59 @@ async def _send_in_chunks(bot: Bot, user_ids: List[int], text: str) -> tuple[int
         await asyncio.sleep(PAUSE)
     return sent, failed
 
+
 def register(dp):
     async def admin_broadcast(cb: CallbackQuery, state: FSMContext):
         if not _authorized(cb.from_user.id if cb.from_user else None):
-            await cb.answer(); return
+            await cb.answer()
+            return
         await state.clear()
         await cb.message.answer(
-            "💬 <b>Broadcast</b>\nTap <i>Compose broadcast</i>, then send the message text.\nUse /cancel to abort.",
-            reply_markup=broadcast_kb()
+            t("bcast.open", user_id=cb.from_user.id),
+            reply_markup=broadcast_kb(cb.from_user.id),
         )
         await cb.answer()
 
     async def admin_broadcast_compose(cb: CallbackQuery, state: FSMContext):
         if not _authorized(cb.from_user.id if cb.from_user else None):
-            await cb.answer(); return
+            await cb.answer()
+            return
         await state.set_state(BroadcastStates.waiting_text)
-        await cb.message.answer("✍️ Send the message to broadcast, or /cancel.")
+        await cb.message.answer(t("bcast.compose_prompt", user_id=cb.from_user.id))
         await cb.answer()
 
     async def cancel_cmd(msg: Message, state: FSMContext):
+        """
+        Global /cancel while composing a broadcast:
+        - Clear state
+        - Show a short confirmation
+        - Immediately show navigation (compose again / back to admin panel)
+        """
         if _authorized(msg.from_user.id if msg.from_user else None):
             await state.clear()
-            await msg.answer("❌ Broadcast cancelled.")
+            await msg.answer(
+                t("bcast.cancelled", user_id=msg.from_user.id),
+                reply_markup=broadcast_kb(msg.from_user.id),
+            )
 
     async def received_broadcast_text(msg: Message, state: FSMContext):
         if not _authorized(msg.from_user.id if msg.from_user else None):
             return
         text = msg.text or msg.caption
         if not text:
-            await msg.answer("Please send text.")
+            await msg.answer(t("bcast.send_text_required", user_id=msg.from_user.id))
             return
         await state.clear()
-        await msg.answer("📤 Sending…")
+        await msg.answer(t("bcast.sending", user_id=msg.from_user.id))
         bot = cast(Bot, msg.bot)
         user_ids = await list_all_user_ids()
-        # Exclude owner and the current sender (usually same)
         excluded = {uid for uid in [OWNER_ID, msg.from_user.id] if uid}
         user_ids = [u for u in user_ids if u not in excluded]
         sent, failed = await _send_in_chunks(bot, user_ids, text)
-        await msg.answer(f"✅ Done. Sent: {sent}, Failed: {failed}")
+        await msg.answer(
+            t("bcast.done", user_id=msg.from_user.id, sent=sent, failed=failed),
+            reply_markup=broadcast_kb(msg.from_user.id),
+        )
 
     dp.callback_query.register(admin_broadcast, F.data == "admin_broadcast")
     dp.callback_query.register(admin_broadcast_compose, F.data == "admin_broadcast_compose")

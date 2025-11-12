@@ -1,4 +1,3 @@
-# backend/app/handlers/chat_link.py
 from __future__ import annotations
 import re
 from typing import Optional, cast, Union
@@ -7,33 +6,30 @@ from aiogram import F, Bot
 from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.enums.chat_type import ChatType
+from aiogram.enums.chat_member_status import ChatMemberStatus
 
 from ..repositories.users import upsert_user
 from ..repositories.tenants import ensure_personal_tenant, link_user_to_tenant
 from ..repositories.chats import upsert_chat
+from ..services.i18n import t  # i18n
+
 
 def _normalize_target(s: str) -> Union[str, int]:
-    """
-    Accepts:
-      - @username
-      - -1001234567890 (returns int)
-      - t.me/username (-> @username)
-      - bare username (-> @username)
-    """
     s = (s or "").strip()
     m = re.search(r"(?:^|https?://)?t\.me/([A-Za-z0-9_]+)$", s)
     if m:
-        return "@"+m.group(1)
+        return "@" + m.group(1)
     if s.startswith("-100") and s[4:].isdigit():
         try:
-            return int(s)  # IMPORTANT: pass int for private channels
+            return int(s)
         except Exception:
             return s
     if s.startswith("@"):
         return s
     if re.fullmatch(r"[A-Za-z0-9_]{5,}", s):
-        return "@"+s
+        return "@" + s
     return s
+
 
 async def _ensure_user_tenant_from_msg(msg: Message) -> Optional[str]:
     if not msg.from_user:
@@ -54,72 +50,84 @@ async def _ensure_user_tenant_from_msg(msg: Message) -> Optional[str]:
     await link_user_to_tenant(u.id, tid)
     return tid
 
+
+def _is_admin_status(status: str) -> bool:
+    # Be tolerant across Telegram/Aiogram versions
+    return status in (
+        "administrator",
+        "creator",
+        "owner",
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.CREATOR,
+    )
+
+
 def register(dp):
-    # /link in groups/supergroups
+    # /link inside groups/supergroups
     async def link_in_group(msg: Message):
         if not msg.from_user:
             return
-        member = await msg.chat.get_member(msg.from_user.id)
-        if member.status not in ("creator", "administrator"):
-            await msg.answer("Only chat admins can link this chat.")
-            return
+        try:
+            member = await msg.chat.get_member(msg.from_user.id)
+            status = getattr(member, "status", "")
+            if not _is_admin_status(status):
+                await msg.answer(t("link.admins_only_link", user_id=msg.from_user.id))
+                return
+        except Exception:
+            # If Telegram fails to return membership, optimistically continue but warn
+            await msg.answer(t("link.couldnt_verify_admin", user_id=msg.from_user.id))
+
         tenant_id = await _ensure_user_tenant_from_msg(msg)
         if not tenant_id:
-            await msg.answer("Could not resolve tenant."); return
+            await msg.answer(t("link.tenant_fail", user_id=msg.from_user.id))
+            return
+
         chat_type = "group" if msg.chat.type == ChatType.GROUP else "supergroup"
         await upsert_chat(msg.chat.id, tenant_id, msg.chat.title, chat_type)
-        await msg.answer("✅ Linked! This chat is now associated with your tenant.")
+        await msg.answer(t("link.linked_ok", user_id=msg.from_user.id))
 
-    # Channel /link still redirects (Telegram hides human sender)
+    # /link in channels redirects
     async def link_in_channel(channel_post: Message):
         bot = cast(Bot, channel_post.bot)
-        await bot.send_message(channel_post.chat.id, "For channels, please DM me: /link_channel @thischannel")
+        await bot.send_message(channel_post.chat.id, t("link.channel_redirect"))
 
-    # /link_channel in DM (works for @public and -100 private)
+    # /link_channel in DM (public @ or -100 id)
     async def link_channel_dm(msg: Message):
         parts = (msg.text or "").split(maxsplit=1)
         if len(parts) < 2:
-            await msg.answer("Usage: /link_channel @channel_username or /link_channel -1001234567890")
+            await msg.answer(t("link.usage", user_id=(msg.from_user.id if msg.from_user else None)))
             return
         target_raw = parts[1]
         target = _normalize_target(target_raw)
         bot = cast(Bot, msg.bot)
 
-        # 1) get_chat
         try:
             chat = await bot.get_chat(target)
         except Exception:
-            # If they pasted something weird, hint and bail
-            await msg.answer(
-                "I couldn't find that channel. Make sure:\n"
-                "• The channel exists\n"
-                "• The bot is added as ADMIN in that channel\n"
-                "• You used @username (public) or the full -100… ID (private)"
-            )
+            await msg.answer(t("link.not_found", user_id=(msg.from_user.id if msg.from_user else None)))
             return
 
         if chat.type != ChatType.CHANNEL:
-            await msg.answer("This command links channels only. For groups, use /link inside the group.")
+            await msg.answer(t("link.wrong_type", user_id=(msg.from_user.id if msg.from_user else None)))
             return
 
-        # 2) verify bot is admin there
         try:
             me_user = await bot.me()
             me = await bot.get_chat_member(chat.id, me_user.id)
-            if me.status not in ("administrator", "creator"):
-                await msg.answer("Please make me an admin in that channel first.")
+            if not _is_admin_status(getattr(me, "status", "")):
+                await msg.answer(t("link.make_me_admin", user_id=(msg.from_user.id if msg.from_user else None)))
                 return
         except Exception:
-            await msg.answer("Could not verify my admin rights in that channel.")
+            await msg.answer(t("link.cant_verify_my_admin", user_id=(msg.from_user.id if msg.from_user else None)))
             return
 
-        # 3) tie to sender's tenant
         tenant_id = await _ensure_user_tenant_from_msg(msg)
         if not tenant_id:
-            await msg.answer("Could not resolve your tenant."); return
+            await msg.answer(t("link.tenant_fail_you", user_id=(msg.from_user.id if msg.from_user else None)))
+            return
 
         await upsert_chat(chat.id, tenant_id, chat.title, "channel")
-        await msg.answer(f"✅ Linked channel: {chat.title or chat.id}")
+        await msg.answer(t("link.linked_channel", user_id=(msg.from_user.id if msg.from_user else None), title=(chat.title or chat.id)))
 
     dp.message.register(link_in_group, Command("link"), F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
     dp.channel_post.register(link_in_channel, Command("link"))

@@ -1,112 +1,111 @@
 # backend/app/bot_worker.py
 from __future__ import annotations
 
-import os
-import sys
 import asyncio
 import logging
-from typing import Optional
+import os
 
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher
-from aiogram.exceptions import TelegramBadRequest
-
-# -----------------------------------------------------------------------------
-# .env & PYTHONPATH
-# -----------------------------------------------------------------------------
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))            # .../backend/app
-BACKEND_DIR = os.path.dirname(CURRENT_DIR)                           # .../backend
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
-
-load_dotenv(dotenv_path=os.path.join(BACKEND_DIR, ".env"))
-
-# -----------------------------------------------------------------------------
-# Config
-# -----------------------------------------------------------------------------
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not TELEGRAM_TOKEN:
-    raise RuntimeError("TELEGRAM_BOT_TOKEN not set in backend/.env")
-
-OWNER_ID: Optional[int] = None
-_owner_env = os.getenv("OWNER_ID", "").strip()
-try:
-    OWNER_ID = int(_owner_env) if _owner_env else None
-except ValueError:
-    OWNER_ID = None
-
-FRONTEND_WEBAPP_URL = os.getenv("FRONTEND_WEBAPP_URL", "").strip()
+from aiogram.enums import ParseMode
 
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s: %(message)s",
-)
+root_logger = logging.getLogger()
+if not root_logger.handlers:
+    logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bot_worker")
 
 # -----------------------------------------------------------------------------
-# Bot / Dispatcher
+# Load .env
 # -----------------------------------------------------------------------------
-bot = Bot(token=TELEGRAM_TOKEN, parse_mode="HTML")
-dp = Dispatcher()
+load_dotenv(override=False)
 
 # -----------------------------------------------------------------------------
-# Register all handlers
+# DB facade
 # -----------------------------------------------------------------------------
-def register_handlers():
-    from app.handlers.start import register as register_start
-    from app.handlers.tenant import register as register_tenant
-    from app.handlers.admin_panel import register as register_admin
-    from app.handlers.broadcast import register as register_broadcast
-    from app.handlers.chat_link import register as register_chat_link
-    from app.handlers.members import register as register_members
-    from app.handlers.reports import register as register_reports
-    # from app.handlers.payments import register as register_payments
-
-    register_start(dp)
-    register_tenant(dp)
-    register_admin(dp)
-    register_broadcast(dp)
-    register_chat_link(dp)
-    register_members(dp)
-    register_reports(dp)
-    # register_payments(dp)
+from app import db as app_db  # provides init_db(), close_db(), get_con()
 
 # -----------------------------------------------------------------------------
-# Run polling
+# i18n
 # -----------------------------------------------------------------------------
-async def run_polling():
-    from app.services.db import close_pool  # ensure we can close on shutdown
+from app.services.i18n import init_i18n
 
-    logger.info("Starting bot polling...")
-    if FRONTEND_WEBAPP_URL:
-        logger.info("FRONTEND_WEBAPP_URL=%s", FRONTEND_WEBAPP_URL)
-    if OWNER_ID is not None:
-        logger.info("OWNER_ID=%s", OWNER_ID)
-    else:
-        logger.warning("OWNER_ID is not set or invalid; /admin will be inaccessible.")
+def _safe_import(module_path: str):
+    try:
+        return __import__(module_path, fromlist=["*"])
+    except Exception as e:
+        logger.warning("Optional module '%s' not imported: %s", module_path, e)
+        return None
+
+
+async def run_polling() -> None:
+    token = os.getenv("BOT_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("BOT_TOKEN is required")
+
+    bot = Bot(token=token, parse_mode=ParseMode.HTML)
+    dp = Dispatcher()
+
+    # -------------------------------------------------------------------------
+    # Init i18n before handlers are loaded
+    # -------------------------------------------------------------------------
+    init_i18n(default_lang="en")
+
+    # IMPORTANT: keep 'payments' first to avoid greedy handlers swallowing /pro
+    modules = [
+        "app.handlers.payments",        # <<— moved to the top
+        "app.handlers.start",
+        "app.handlers.group_tools_dm",
+        "app.handlers.members",
+        "app.handlers.reports",
+        "app.handlers.admin_plans",
+        "app.handlers.admin_panel",
+        "app.handlers.broadcast",
+        "app.handlers.campaigns",
+        "app.handlers.chat_link",
+        "app.handlers.activity",
+    ]
+    for name in modules:
+        mdl = _safe_import(name)
+        if not mdl:
+            continue
+        if hasattr(mdl, "router"):
+            dp.include_router(mdl.router)
+            logger.info("Included: %s.router", name)
+        elif hasattr(mdl, "register"):
+            try:
+                mdl.register(dp)  # type: ignore[attr-defined]
+                logger.info("Included via register(dp): %s", name)
+            except Exception as e:
+                logger.warning("Failed to register '%s': %s", name, e)
+
+    await app_db.init_db()
+    logger.info("Database pool ready.")
+
+    # Optional compatibility hook
+    try:
+        import app.repositories.activity as repo_activity
+        if hasattr(repo_activity, "ensure_activity_tables"):
+            async with app_db.get_con() as con:
+                await repo_activity.ensure_activity_tables(con)  # type: ignore
+                logger.info("ensure_activity_tables done.")
+    except Exception as e:
+        logger.warning("ensure_activity_tables skipped: %s", e)
+
+    # Make sure Telegram sends only the update types we actually use
+    allowed = dp.resolve_used_update_types()
+    logger.info("Allowed updates resolved: %s", allowed)
+
+    logger.info("Start polling…")
+    await dp.start_polling(bot, allowed_updates=allowed)
 
     try:
-        register_handlers()
-        await dp.start_polling(bot)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutting down by interrupt...")
-    except TelegramBadRequest as e:
-        logger.exception("Telegram API error: %s", e)
-    except Exception as e:
-        logger.exception("Unexpected error in polling: %s", e)
-    finally:
-        try:
-            await close_pool()
-        except Exception:
-            pass
-        try:
-            await bot.session.close()
-        except Exception:
-            pass
-        logger.info("Bot stopped.")
+        await app_db.close_db()
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     asyncio.run(run_polling())
