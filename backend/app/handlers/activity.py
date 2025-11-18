@@ -1,7 +1,9 @@
+# backend/app/handlers/activity.py
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+
 from aiogram import F
 from aiogram.types import Message, ChatPermissions
 from aiogram.enums.chat_type import ChatType
@@ -35,12 +37,40 @@ def _has_content(msg: Message) -> bool:
     )
 
 
+async def _is_group_admin(msg: Message) -> bool:
+    """
+    Return True if sender is admin/owner of the group.
+    If we can't verify (API error), we *assume* not admin.
+    """
+    if not msg.from_user:
+        return False
+    try:
+        member = await msg.chat.get_member(msg.from_user.id)
+        status = str(getattr(member, "status", "")).lower()
+        return status in {"administrator", "creator", "owner"}
+    except Exception:
+        return False
+
+
+# backend/app/handlers/activity.py  (only this function changed)
 async def _enforce_group_gate_if_needed(msg: Message) -> bool:
     """
     Returns True if user is allowed to speak, False if they were gated (muted + DM sent).
     """
     if not msg.from_user or msg.from_user.is_bot:
         return True  # ignore bots/anonymous
+
+    # ✅ Do NOT gate group admins / owners
+    try:
+        member = await msg.chat.get_member(msg.from_user.id)
+        status = getattr(member, "status", "")
+        status_str = str(status.value if hasattr(status, "value") else status).lower()
+        if status_str in {"administrator", "creator", "owner"}:
+            return True
+    except Exception:
+        # If we can’t resolve admin status, fall back to normal gating
+        pass
+
     targets = await list_group_targets(msg.chat.id)  # [{target, join_url}]
     if not targets:
         return True
@@ -103,6 +133,7 @@ async def _enforce_group_gate_if_needed(msg: Message) -> bool:
     return False
 
 
+
 def register(dp):
     async def on_group_message(msg: Message):
         # Only groups/supergroups, ignore bot messages
@@ -111,7 +142,7 @@ def register(dp):
         if not _has_content(msg):
             return
 
-        # 🚧 Force-Join enforcement on first real message
+        # 🚧 Force-Join enforcement on first real message (if enabled)
         allowed = await _enforce_group_gate_if_needed(msg)
         if not allowed:
             return  # do not count gated message

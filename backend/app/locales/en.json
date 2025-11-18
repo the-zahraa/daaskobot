@@ -10,19 +10,63 @@
     }
   },
 
-  "dash": {
-    "buttons": {
-      "overview": "🏠 Overview",
-      "linked_chats": "🔗 Linked chats",
-      "analytics": "📈 Analytics",
-      "reports": "🧾 Reports",
-      "campaigns": "📣 Campaigns",
-      "group_tools": "📎 Group tools",
-      "help": "❓ Help",
-      "settings": "⚙️ Settings"
-    }
-  },
+  "pro": {
+  "popups": {
+    "force_join": "Auto-mute newcomers until they join your required channels.\n• Stops spam & link-droppers\n• Boosts channel reach\n• One-tap unmute after joining\n\nAvailable in Pro. Use ⭐ Upgrade to Pro.",
+    "campaigns": "Create labeled invite links and track which campaign brings members.\n• One-tap link creation\n• Top campaigns (30d)\n• Clean per-chat list\n\nAvailable in Pro. Use ⭐ Upgrade to Pro.",
+    "massdm": "DM the audience who joined with your referral link.\n• Filter by phone/username/name length\n• Sends in safe batches\n\nAvailable in Pro. Use ⭐ Upgrade to Pro."
+  }
+},
 
+"pay": {
+  "buy_btn": "Buy {title} — {price}⭐ / {days}d",
+  "status_free_head": "⭐ <b>Your plan: Free</b>\nUpgrade to unlock Pro features.",
+  "status_pro_with_exp": "✅ <b>Your plan: Pro</b>\nExpires: <b>{expiry}</b>",
+  "status_pro_no_exp": "✅ <b>Your plan: Pro</b>",
+  "no_plans": "No plans are available right now.",
+  "load_error": "Couldn’t load plans. Error: {err}",
+  "plan_unavailable": "This plan is not available.",
+  "invoice_fail": "I couldn’t create the invoice. Error: {err}",
+  "paid_unknown_plan": "Thanks for your payment! (Unknown plan code.)",
+  "paid_plan_missing": "Thanks for your payment, but I couldn’t find the plan.",
+  "paid_ok_with_exp": "✅ Payment received. Pro is active until <b>{expiry}</b>.",
+  "paid_ok": "✅ Payment received. Pro is active.",
+  "paid_update_fail": "Payment succeeded but I couldn’t update your subscription. Error: {err}",
+  "buy_btn_free": "Activate Free: {title} — 0⭐ / {days}d",
+    "back_btn": "⬅️ Back",
+    "activated_free_ok": "✅ Pro activated. Expires: <b>{expiry}</b>",
+    "activated_free_ok_noexp": "✅ Pro activated.",
+"already_pro_no_extend": "You already have an active Pro plan until {expiry}. Your subscription was not extended."
+
+
+  }
+,
+
+
+  "dash": {
+  "buttons": {
+    "get_started": "🚀 Get started",
+    "overview": "🏠 Overview",
+    "linked_chats": "🔗 Linked chats",
+    "analytics": "📈 Analytics",
+    "reports": "🧾 Reports",
+    "campaigns": "📣 Campaigns",
+    "group_tools": "📎 Group tools",
+    "help": "❓ Help",
+    "settings": "⚙️ Settings",
+    "campaign_tracking": "🎯 Campaign Tracking",
+    "force_join": "🔒 Force-join",
+    "mass_dm": "📣 Mass DM",
+    "upgrade_pro": "⭐ Upgrade to Pro"
+  },
+"get_started": "👋 <b>Welcome to Daasko management bot</b>\n\nHere’s how to get started:\n\n<b>1) Add the bot to a group</b>\nUse this link to choose a group and add the bot as an admin:\n👉 https://t.me/analytiquesbot?startgroup=new\n\n<b>2) Add the bot to your channels</b>\nOpen your channel → Administrators → Add admin → select @analytiquesbot and give it the necessary permissions.\n\n<b>3) Use the dashboard buttons</b>\n• 🔒 Force-Join – make new members join your channels before they can speak\n• 📈 Analytics – see joins, leaves, and activity\n• 📣 Campaigns – create labeled invite links with statistics\n• 📣 Mass DM – message people who joined through your invite links\n• 🧾 Reports – export clean, professional PDF reports\n\nYou can always come back here with /start."
+}
+,
+
+"auto_link": {
+  "failed_dm": "⚠️ I couldn’t link this chat to your dashboard. Please try /link inside the group or contact support."
+}
+,
   "request_phone": {
     "button": "📱 Share phone number",
     "prompt": "Before we continue, please share your phone number."
@@ -76,20 +120,24 @@
     "no_tenant": "No workspace found yet. Start the bot in DM and link a chat first."
   },
 
-  "analytics": {
-    "none_chats": "📈 Analytics\nNo linked chats yet.",
-    "select_chat": "Select a chat to view analytics:",
-    "title_30d": "📈 <b>Analytics (last 30 days)</b>",
-    "total_joins": "• Total joins: <b>{n}</b>",
-    "total_leaves": "• Total leaves: <b>{n}</b>",
-    "messages_7d": "• Messages (7 days): <b>{n}</b>",
-    "avg_dau_7d": "• Avg daily active users (7 days): <b>{avg}</b>",
-    "peak_hour": "• Peak hour (Europe/Helsinki, 30 days): <b>{hour}:00</b> — {count} messages",
-    "top_user_30d": "• Most active user (30 days): <b>{user}</b> — {count} messages",
-    "pro_required_note": "⭐️ Messages, DAU, peak hour and top users are <b>Pro</b> features. Use /pro to upgrade.",
-    "last7_header": "\nLast 7 days (joins / leaves):",
-    "day_line": "{date}: +{joins} / -{leaves}"
-  },
+"analytics": {
+  "none_chats": "📈 Analytics\nNo linked chats yet.",
+  "select_chat": "Select a chat to view analytics:",
+  "title_30d": "📈 <b>Analytics (last 30 days)</b>",
+  "total_joins": "• Total joins: <b>{n}</b>",
+  "total_leaves": "• Total leaves: <b>{n}</b>",
+  "net_growth_30d": "• Net growth (30 days): <b>{n}</b>",
+  "messages_7d": "• Messages (7 days): <b>{n}</b>",
+  "avg_dau_7d": "• Avg daily active users (7 days): <b>{avg}</b>",
+  "peak_hour": "• Peak hour (Europe/Helsinki, 30 days): <b>{hour}:00</b> — {count} messages",
+  "top_user_30d": "• Most active user (30 days): <b>{user}</b> — {count} messages",
+  "pro_required_note": "⭐️ Messages, DAU, peak hour and top users are <b>Pro</b> features. Use /pro to upgrade.",
+  "last7_header": "\nLast 7 days (joins / leaves):",
+  "day_line": "{date}: +{joins} / -{leaves}",
+  "insight": "Insight: growth over the last 7 days is <b>{growth}</b> vs the previous 7 days. Each active user sends about <b>{mpu}</b> messages per day on average."
+}
+,
+
 
   "reports": {
     "none_chats": "🧾 Reports\nNo linked chats yet.",
@@ -98,6 +146,14 @@
     "errors": {
       "pro_only": "Reports are a Pro feature."
     },
+    "eng": {
+  "title": "Engagement summary",
+  "avg_joins_per_day": "Average joins per day: {value}",
+  "avg_leaves_per_day": "Average leaves per day: {value}",
+  "msgs_per_active_per_day": "Messages per active user per day: {value}",
+  "msgs_per_join": "Messages per new member: {value}"
+},
+
     "ui": {
       "invalid_request": "Invalid report request.",
       "not_allowed": "You don’t have access to that chat.",
@@ -215,6 +271,8 @@
   "btn_back": "⬅️ Back",
   "btn_back_admin": "🏠 Back to admin panel",
 
+  "custom_set_ok": "✅ Plan {code} updated to {price}⭐.",
+
   "list_title": "📜 All plans",
   "list_none": "No plans found. Use the buttons below to create defaults or a new plan.",
   "plan_row": "{code} — {price}⭐ ({active})",
@@ -237,7 +295,8 @@
 
   "send_custom_prompt": "Send a new price in Stars for plan <b>{code}</b>.",
   "send_custom_invalid": "Please send a valid positive integer price.",
-
+   "set_free_btn": "💸 Set free (0⭐)",
+    "free_set_ok": "✅ Plan {code} is now free (0⭐) for everyone.",
   "create_ask_code": "Send a plan code (e.g. PRO_MONTH_PLUS). Use letters, digits and underscores only, no spaces.",
   "create_invalid_code": "Invalid code. Use letters, digits and underscores only, no spaces.",
   "create_ask_title": "Send a human-readable title for plan <b>{code}</b>.",
@@ -311,40 +370,43 @@
     "linked_channel": "Channel <b>{title}</b> is now linked to your workspace ✅"
   },
 
-  "gt": {
-    "title": "📎 <b>Group tools</b>",
-    "pro_gate": "Group tools are a <b>Pro</b> feature. Upgrade to unlock force-join and more.",
-    "none_chats": "No linked groups yet.\nLink a group first, then come back here.",
-    "pick_group": "Choose a group to configure force-join:",
-    "buttons": {
-      "back": "⬅️ Back",
-      "add": "➕ Add required channel",
-      "list": "📋 View required channels",
-      "clear": "🗑 Clear all",
-      "how": "ℹ️ How it works",
-      "cancel": "✖️ Cancel"
-    },
-    "errors": {
-      "pro_only": "Group tools are available only on the Pro plan.",
-      "admin_only": "Only group admins can manage force-join.",
-      "need_valid": "Please send a valid @channel, -100… chat ID, or full t.me link."
-    },
-    "menu_lead": "Configure what channels / groups members must join before they can speak.",
-    "list": {
-      "none": "No required channels for this group yet.",
-      "title": "📋 Required channels / groups:"
-    },
-    "clear": {
-      "ok": "All required channels for this group have been cleared."
-    },
-    "how": {
-      "body": "How this works:\n\n1. Add one or more required channels / groups.\n2. New members are muted when they join the group.\n3. They get a DM with buttons to join your targets.\n4. Once they have joined, they tap “I joined” to be unmuted."
-    },
-    "add": {
-      "prompt": "Send a single @username, -100 ID or t.me link to add as required for this group.",
-      "added": "Added: <b>{target}</b>\n\nYou can add more or go back to the menu."
-    }
+"gt": {
+  "title": "🔒 Force-Join",
+  "pro_gate": "Force-Join is a <b>Pro</b> feature. Upgrade to unlock it for your groups.",
+  "none_chats": "No linked groups yet.\nLink a group first, then come back here.",
+  "pick_group": "Choose a group where you want to enable Force-Join:",
+  "buttons": {
+    "back": "⬅️ Back",
+    "add": "➕ Set Force-Join",
+    "list": "📋 View Force-Join channels",
+    "clear": "🗑 Clear Force-Join",
+    "how": "ℹ️ How it works",
+    "cancel": "✖️ Cancel"
   },
+  "errors": {
+    "pro_only": "Force-Join is available only on the Pro plan.",
+    "admin_only": "Only group admins can manage Force-Join.",
+    "need_valid": "Please send a valid @channel, -100… chat ID, or full t.me link."
+  },
+  "menu_lead": "Configure Force-Join: choose which channels members must join before they can speak.",
+  "list": {
+    "none": "No Force-Join channels are configured for this group yet.",
+    "title": "📋 Force-Join channels / groups:"
+  },
+  "clear": {
+    "ok": "Force-Join has been cleared for this group."
+  },
+  "how": {
+    "body": "How Force-Join works:\n\n1) You add one or more channels / groups.\n2) New members are muted when they join the group.\n3) They get a DM with buttons to join your channels.\n4) After they join and tap \"I joined\", the bot unmutes them automatically."
+  },
+  "add": {
+    "prompt": "✏️ <b>Set Force-Join</b>\n\nSend the channel @username or invite link you want to require in this group.\n\nExamples:\n• @mychannel\n• https://t.me/mychannel\n\nYou can add multiple channels one by one.",
+    "added": "✅ Added: <b>{target}</b>\n\nNew members in this group must now join this channel before they can speak.\n\nSend another channel to add more, or tap ⬅️ Back in the menu."
+  }
+}
+,
+
+
 
   "group_tools": {
     "help": "With group tools you can:\n\n• Require users to join specific channels before speaking\n• Automatically mute new members until they join\n• Track joins and leaves for your groups\n\nOpen this in a linked group to configure the rules.",

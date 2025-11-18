@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os
 import logging
-from typing import Optional, cast, List, Tuple, Dict
+from typing import Optional, cast, List, Tuple, Dict, Any
 
 from aiogram import F, Bot, Router, BaseMiddleware
 from aiogram.filters import Command
@@ -17,21 +17,19 @@ from aiogram.types import (
     ChatPermissions,
 )
 
-from ..db import get_con  # for reports chat listing
+from ..db import get_con
 from ..repositories.users import upsert_user, has_phone, get_language, set_language
 from ..repositories.tenants import ensure_personal_tenant, link_user_to_tenant, get_user_tenant
 from ..repositories.subscriptions import get_user_subscription_status
 from ..repositories.chats import list_tenant_chats
 from ..repositories.stats import get_last_days
-from ..repositories.required import list_required_targets, list_group_targets  # global + per-group (simple fallback)
+from ..repositories.required import list_required_targets, list_group_targets
 from ..repositories.activity import (
     get_messages_daily, get_dau_daily, get_top_talkers, get_peak_hour, get_most_active_user
 )
-
 from ..services.i18n import t, remember_language
 
 logger = logging.getLogger(__name__)
-
 router = Router()
 
 OWNER_ID: Optional[int] = None
@@ -41,28 +39,44 @@ try:
 except ValueError:
     OWNER_ID = None
 
+# ---------------- Plan helpers (fix Pro detection) ----------------
+def _normalize_plan(plan: Any) -> str:
+    if plan is None:
+        return ""
+    if isinstance(plan, str):
+        return plan.strip().lower()
+    if isinstance(plan, dict):
+        for k in ("plan", "code", "tier", "name"):
+            v = plan.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip().lower()
+        return str(plan).strip().lower()
+    for attr in ("plan", "code", "tier", "name"):
+        v = getattr(plan, attr, None)
+        if isinstance(v, str) and v.strip():
+            return v.strip().lower()
+    return str(plan).strip().lower()
 
-# -------------- ACCESS POLICY (Europe-only + +888 anonymous) --------------
-ALLOWED_PREFIXES = ["+888"]  # Telegram anonymous number
+async def _is_pro_user(user_id: int) -> bool:
+    plan = await get_user_subscription_status(user_id)
+    code = _normalize_plan(plan)
+    return code in {
+        "pro", "pro_week", "pro_month", "pro_year",
+        "pro_plus", "premium", "paid", "tier_pro", "owner_pro"
+    }
+
+# -------------- ACCESS POLICY --------------
+ALLOWED_PREFIXES = ["+888"]
 
 def _is_allowed(phone: Optional[str]) -> bool:
-    """
-    Allow:
-      • +888 (Telegram anonymous)
-      • Europe-only country codes: +30 … +59
-    Block everything else (e.g. +7 Russia, +98 Iran, etc.).
-    """
     if not phone:
         return False
     phone = phone.strip()
-    # Anonymous number
     for p in ALLOWED_PREFIXES:
         if phone.startswith(p):
             return True
-    # Block +7 range outright
     if phone.startswith("+7"):
         return False
-    # Europe bucket check: +30..+59 (covers EU/EFTA & nearby European ranges we allow)
     if phone.startswith("+") and len(phone) >= 3 and phone[1:3].isdigit():
         try:
             two = int(phone[1:3])
@@ -71,9 +85,7 @@ def _is_allowed(phone: Optional[str]) -> bool:
             return False
     return False
 
-
 # ---------------- UI ----------------
-
 def owner_home_kb(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=t("ui.owner.admin_panel", user_id=user_id), callback_data="admin_overview")],
@@ -82,6 +94,13 @@ def owner_home_kb(user_id: int) -> InlineKeyboardMarkup:
 
 def user_dashboard_kb(user_id: int) -> InlineKeyboardMarkup:
     rows = [
+        # NEW: big CTA button
+        [
+            InlineKeyboardButton(
+                text=t("dash.buttons.get_started", user_id=user_id),
+                callback_data="dash_get_started",
+            )
+        ],
         [
             InlineKeyboardButton(text=t("dash.buttons.overview", user_id=user_id), callback_data="tenant_overview"),
             InlineKeyboardButton(text=t("dash.buttons.linked_chats", user_id=user_id), callback_data="tenant_chats"),
@@ -92,7 +111,13 @@ def user_dashboard_kb(user_id: int) -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text=t("dash.buttons.campaigns", user_id=user_id), callback_data="tenant_campaigns"),
-            InlineKeyboardButton(text=t("dash.buttons.group_tools", user_id=user_id), callback_data="tenant_group_tools"),
+            # 🔒 Require Channels → open in-bot group tools wizard
+            InlineKeyboardButton(text=t("dash.buttons.force_join", user_id=user_id), callback_data="tenant_group_tools"),
+        ],
+        [
+            # 📣 Mass DM → open Mass DM panel directly
+            InlineKeyboardButton(text=t("dash.buttons.mass_dm", user_id=user_id), callback_data="massdm_home"),
+            InlineKeyboardButton(text=t("dash.buttons.upgrade_pro", user_id=user_id), callback_data="pro_open"),
         ],
         [
             InlineKeyboardButton(text=t("dash.buttons.help", user_id=user_id), callback_data="help"),
@@ -109,62 +134,34 @@ def request_phone_kb(user_id: int) -> ReplyKeyboardMarkup:
         selective=True,
     )
 
-# --------- normalization helpers (for legacy list[str]) ----------
-
+# --------- normalization helpers ----------
 def _parse_simple_target(s: str) -> Dict[str, Optional[str]]:
-    """
-    Turn a legacy stored string (from required_membership.target) into a unified dict:
-      { 'target': '@name' | '-100id' | None, 'join_url': 'https://t.me/...' | None }
-    """
     s = (s or "").strip()
     if not s:
         return {"target": None, "join_url": None}
     low = s.lower()
-
-    # raw URL
     if low.startswith("http://") or low.startswith("https://"):
         return {"target": None, "join_url": s}
-
-    # t.me/... forms
     if low.startswith("t.me/") or low.startswith("https://t.me/") or low.startswith("http://t.me/"):
         try:
             uname = s.split("/", 3)[-1].strip()
             if uname.startswith("+") or uname.startswith("joinchat/"):
-                # joinchat / +CODE type → treat as URL
                 return {"target": None, "join_url": f"https://t.me/{uname}"}
             if uname:
-                # username → @channel
                 return {"target": f"@{uname.lstrip('@')}", "join_url": None}
         except Exception:
             pass
-
-    # direct @username or -100id
     if s.startswith("@") or s.startswith("-100"):
         return {"target": s, "join_url": None}
-
-    # bare username
     if s.isalnum() or s.replace("_", "").isalnum():
         return {"target": f"@{s}", "join_url": None}
-
     return {"target": None, "join_url": None}
 
-
 async def _list_required_targets_full() -> List[Dict[str, Optional[str]]]:
-    """
-    Unified accessor for global required targets.
-
-    Current schema stores only `target` (text). We read the raw strings via
-    repositories.required.list_required_targets() and normalize into:
-
-        [{ "target": "@MyChannel" | "-100...", "join_url": "https://t.me/..." | None }, ...]
-
-    This keeps your behavior but avoids any dynamic imports.
-    """
     simple = await list_required_targets()
     return [_parse_simple_target(s) for s in simple]
 
 # ----- keyboards -----
-
 def force_join_kb(user_id: int, targets: List[Dict[str, Optional[str]]]) -> InlineKeyboardMarkup:
     rows: List[List[InlineKeyboardButton]] = []
     for row in targets:
@@ -204,7 +201,6 @@ def force_join_kb_group(user_id: int, chat_id: int, targets: List[Dict[str, Opti
     return InlineKeyboardMarkup(inline_keyboard=btn_rows)
 
 # ---------------- Helpers ----------------
-
 def _is_owner(uid: Optional[int]) -> bool:
     return OWNER_ID is not None and uid == OWNER_ID
 
@@ -288,12 +284,20 @@ async def _list_user_chats_simple(user_tg_id: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 def _reports_kb(user_id: int, chats: list[dict]) -> InlineKeyboardMarkup:
+    """
+    Reports chat selector + Back button.
+    """
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
     for r in chats:
         chat_id = int(r["tg_chat_id"])
         title = r.get("title") or str(chat_id)
-        kb.button(text=t("reports.chat_button", user_id=user_id, title=title, type=r.get("type", "")), callback_data=f"rep:chat:{chat_id}:30")
+        kb.button(
+            text=t("reports.chat_button", user_id=user_id, title=title, type=r.get("type", "")),
+            callback_data=f"rep:chat:{chat_id}:30",
+        )
+    # NEW: Back button to overview
+    kb.button(text=t("common.back", user_id=user_id), callback_data="tenant_overview")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -316,14 +320,13 @@ async def _edit_or_send(cb: CallbackQuery, text: str, kb=None):
             pass
         await cb.answer()
 
-# --- Clear any leftover ReplyKeyboardMarkup (old “Dashboard/Help/…”) ---
 async def _clear_reply_keyboard(bot: Bot, chat_id: int):
     try:
         await bot.send_message(chat_id, " ", reply_markup=ReplyKeyboardRemove())
     except Exception:
         pass
 
-# ---------------- GLOBAL FORCE-JOIN GUARD (runs before any private handler) ----------------
+# ---------------- Middleware ----------------
 class PrivateForceJoinGuard(BaseMiddleware):
     BYPASS_CB_PREFIXES = ("force_check_global", "settings:set_lang:", "settings:", "admin_")
     BYPASS_CMDS = ("/start",)
@@ -331,7 +334,6 @@ class PrivateForceJoinGuard(BaseMiddleware):
     async def __call__(self, handler, event, data):
         bot: Bot = data["bot"]
 
-        # PRIVATE messages
         if isinstance(event, Message):
             m: Message = event
             if not m.from_user or m.chat.type != "private":
@@ -353,9 +355,8 @@ class PrivateForceJoinGuard(BaseMiddleware):
                             t("force_join.prompt_private_aware", user_id=m.from_user.id),
                             reply_markup=force_join_kb(m.from_user.id, targets),
                         )
-                        return  # stop downstream handlers
+                        return
 
-        # PRIVATE callback queries
         if isinstance(event, CallbackQuery):
             cb: CallbackQuery = event
             if not cb.from_user:
@@ -399,12 +400,10 @@ class PrivateForceJoinGuard(BaseMiddleware):
 
         return await handler(event, data)
 
-# Attach guard to THIS router too
 router.message.outer_middleware(PrivateForceJoinGuard())
 router.callback_query.outer_middleware(PrivateForceJoinGuard())
 
-# ---------------- Settings (language flow) ----------------
-
+# ---------------- Settings ----------------
 def settings_kb(user_id: int) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=t("settings.buttons.language", user_id=user_id), callback_data="settings:lang")],
@@ -437,14 +436,12 @@ async def render_settings(cb_or_msg, user_id: int):
         await cb_or_msg.answer(text, reply_markup=kb)
 
 # ---------------- Register ----------------
-
 @router.message(Command("start"))
 async def start_cmd(msg: Message):
     bot = cast(Bot, msg.bot)
     if not msg.from_user:
         return
 
-    # Clear any lingering ReplyKeyboardMarkup (old keyboards)
     await _clear_reply_keyboard(bot, msg.chat.id)
 
     if _is_owner(msg.from_user.id):
@@ -455,7 +452,6 @@ async def start_cmd(msg: Message):
         )
         return
 
-    # If we don't have a phone yet, ask once
     if not await has_phone(msg.from_user.id):
         await bot.send_message(
             msg.chat.id,
@@ -464,10 +460,8 @@ async def start_cmd(msg: Message):
         )
         return
 
-    # User is already verified (phone stored) → proceed normally
     await _ensure_user_and_tenant(msg)
 
-    # pre-warm language cache
     try:
         lang = await get_language(msg.from_user.id)
         if lang:
@@ -480,7 +474,6 @@ async def start_cmd(msg: Message):
 
     await _render_dashboard(bot, msg.chat.id, msg.from_user.id)
 
-
 @router.callback_query(F.data == "owner_dashboard")
 async def owner_dashboard(cb: CallbackQuery):
     if not cb.from_user or not _is_owner(cb.from_user.id):
@@ -489,10 +482,24 @@ async def owner_dashboard(cb: CallbackQuery):
     await _render_dashboard(cast(Bot, cb.bot), cb.message.chat.id, cb.from_user.id)
     await cb.answer()
 
+@router.callback_query(F.data == "dash_get_started")
+async def dash_get_started(cb: CallbackQuery):
+    if not cb.from_user:
+        await cb.answer(); return
+    bot = cast(Bot, cb.bot)
+    try:
+        me = await bot.get_me()
+        deep_link = f"https://t.me/{me.username}?startgroup=new"
+    except Exception:
+        deep_link = ""
+    text = t("dash.get_started", user_id=cb.from_user.id, link=deep_link)
+    await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
 @router.callback_query(F.data == "force_check_global")
 async def force_check_global(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     bot = cast(Bot, cb.bot)
     if _is_owner(cb.from_user.id):
         try:
@@ -501,7 +508,8 @@ async def force_check_global(cb: CallbackQuery):
         except Exception:
             pass
         await _render_dashboard(bot, cb.message.chat.id, cb.from_user.id)
-        await cb.answer(); return
+        await cb.answer()
+        return
 
     ok = await _enforce_global_requirements(bot, cb.from_user.id)
     if not ok:
@@ -515,8 +523,6 @@ async def force_check_global(cb: CallbackQuery):
     await _render_dashboard(bot, cb.message.chat.id, cb.from_user.id)
     await cb.answer()
 
-
-# ---------- Per-group re-check / unmute ----------
 @router.callback_query(F.data.startswith("force_check_group:"))
 async def force_check_group(cb: CallbackQuery):
     if not cb.from_user:
@@ -525,7 +531,7 @@ async def force_check_group(cb: CallbackQuery):
     bot = cast(Bot, cb.bot)
     parts = (cb.data or "").split(":")
     chat_id = int(parts[1]) if len(parts) >= 2 else 0
-    targets = await list_group_targets(chat_id)  # [{target, join_url}]
+    targets = await list_group_targets(chat_id)
     if not targets:
         try:
             if cb.message:
@@ -576,30 +582,22 @@ async def force_check_group(cb: CallbackQuery):
         pass
     await cb.answer()
 
-
 @router.message(F.contact)
 async def contact_shared(msg: Message):
-    """
-    This is the ONLY place we verify the phone → verification happens once.
-    If it passes here, the user won't be asked again (we store the phone).
-    """
     bot = cast(Bot, msg.bot)
     if not msg.from_user or not msg.contact:
         return
 
-    # Normalize phone to E.164-ish
     raw = msg.contact.phone_number or ""
     phone_e164 = raw if raw.startswith("+") else f"+{raw}" if raw else None
 
-    # Enforce access policy
     if not _is_allowed(phone_e164):
         try:
             await bot.send_message(msg.chat.id, t("access.denied_geofence", user_id=msg.from_user.id), reply_markup=ReplyKeyboardRemove())
         except Exception:
             pass
-        return  # stop here — do NOT store / proceed
+        return
 
-    # Allowed → store once and continue normally
     u = msg.from_user
     await upsert_user(
         tg_id=u.id,
@@ -617,24 +615,30 @@ async def contact_shared(msg: Message):
     await bot.send_message(msg.chat.id, t("contact.thanks_in", user_id=u.id), reply_markup=ReplyKeyboardRemove())
     await _render_dashboard(bot, msg.chat.id, u.id)
 
-
 @router.callback_query(F.data == "tenant_overview")
 async def tenant_overview(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     if not _is_owner(cb.from_user.id):
-        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id): return
+        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
+            return
     plan = await get_user_subscription_status(cb.from_user.id)
     text = f"{t('overview.title', user_id=cb.from_user.id)}\n" + t("overview.current_plan", user_id=cb.from_user.id, plan=plan)
     await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
-
 @router.callback_query(F.data == "tenant_chats")
 async def tenant_chats_cb(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     if not _is_owner(cb.from_user.id):
-        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id): return
+        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
+            return
     tenant_id = await get_user_tenant(cb.from_user.id)
-    if not tenant_id: await cb.answer(t("errors.no_tenant", user_id=cb.from_user.id), show_alert=True); return
+    if not tenant_id:
+        await cb.answer(t("errors.no_tenant", user_id=cb.from_user.id), show_alert=True)
+        return
     chats = await list_tenant_chats(tenant_id)
     if not chats:
         text = f"{t('chats.linked_title', user_id=cb.from_user.id)}\n{t('chats.none_tip', user_id=cb.from_user.id)}"
@@ -647,56 +651,120 @@ async def tenant_chats_cb(cb: CallbackQuery):
         text = "\n".join(lines)
     await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
-
 @router.callback_query(F.data == "tenant_analytics")
 async def tenant_analytics_cb(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     if not _is_owner(cb.from_user.id):
-        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id): return
+        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
+            return
     tenant_id = await get_user_tenant(cb.from_user.id)
-    if not tenant_id: await cb.answer(t("errors.no_tenant", user_id=cb.from_user.id), show_alert=True); return
+    if not tenant_id:
+        await cb.answer(t("errors.no_tenant", user_id=cb.from_user.id), show_alert=True)
+        return
     chats = await list_tenant_chats(tenant_id)
     if not chats:
-        await _edit_or_send(cb, t("analytics.none_chats", user_id=cb.from_user.id), user_dashboard_kb(cb.from_user.id)); return
+        await _edit_or_send(cb, t("analytics.none_chats", user_id=cb.from_user.id), user_dashboard_kb(cb.from_user.id))
+        return
     await _edit_or_send(cb, t("analytics.select_chat", user_id=cb.from_user.id), _analytics_list_kb(cb.from_user.id, chats))
-
 
 @router.callback_query(F.data.startswith("tenant_analytics_view:"))
 async def tenant_analytics_view(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    """
+    Analytics screen with extra KPIs + insight sentence.
+    """
+    if not cb.from_user:
+        await cb.answer()
+        return
+
     if not _is_owner(cb.from_user.id):
-        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id): return
+        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
+            return
+
     parts = (cb.data or "").split(":")
     chat_id = int(parts[1]) if len(parts) >= 2 else 0
 
     rows = await get_last_days(chat_id, 30)
-    lines = [t("analytics.title_30d", user_id=cb.from_user.id)]
+    lines: list[str] = [t("analytics.title_30d", user_id=cb.from_user.id)]
 
     total_joins = sum(j for _, j, _ in rows)
     total_leaves = sum(l for _, _, l in rows)
+    net_growth = total_joins - total_leaves
+
     lines.append(t("analytics.total_joins", user_id=cb.from_user.id, n=total_joins))
     lines.append(t("analytics.total_leaves", user_id=cb.from_user.id, n=total_leaves))
+    lines.append(t("analytics.net_growth_30d", user_id=cb.from_user.id, n=net_growth))
 
-    plan = await get_user_subscription_status(cb.from_user.id)
-    is_pro = str(plan).lower() == "pro"
-
-    if is_pro:
+    if await _is_pro_user(cb.from_user.id):
         msgs_7d = await get_messages_daily(chat_id, 7)
         dau_7d  = await get_dau_daily(chat_id, 7)
-        peak    = await get_peak_hour(chat_id, days=30, tz='Europe/Helsinki')
+        peak    = await get_peak_hour(chat_id, days=30, tz="Europe/Helsinki")
         top1    = await get_most_active_user(chat_id, days=30)
 
+        total_msgs_7d = 0
         if msgs_7d:
-            total_msgs = sum(int(c) for _, c in msgs_7d)
-            lines.append(t("analytics.messages_7d", user_id=cb.from_user.id, n=total_msgs))
+            total_msgs_7d = sum(int(c) for _, c in msgs_7d)
+            lines.append(t("analytics.messages_7d", user_id=cb.from_user.id, n=total_msgs_7d))
+
+        avg_dau_7d = 0.0
         if dau_7d:
-            avg_dau = round(sum(int(c) for _, c in dau_7d) / max(len(dau_7d), 1), 1)
-            lines.append(t("analytics.avg_dau_7d", user_id=cb.from_user.id, avg=avg_dau))
+            avg_dau_7d = round(
+                sum(int(c) for _, c in dau_7d) / max(len(dau_7d), 1),
+                1,
+            )
+            lines.append(t("analytics.avg_dau_7d", user_id=cb.from_user.id, avg=avg_dau_7d))
+
         if peak:
             hour_str = f"{peak[0]:02d}"
-            lines.append(t("analytics.peak_hour", user_id=cb.from_user.id, hour=hour_str, count=peak[1]))
+            lines.append(
+                t(
+                    "analytics.peak_hour",
+                    user_id=cb.from_user.id,
+                    hour=hour_str,
+                    count=peak[1],
+                )
+            )
+
         if top1:
-            lines.append(t("analytics.top_user_30d", user_id=cb.from_user.id, user=top1[0], count=top1[1]))
+            lines.append(
+                t(
+                    "analytics.top_user_30d",
+                    user_id=cb.from_user.id,
+                    user=top1[0],
+                    count=top1[1],
+                )
+            )
+
+        # ---------- NEW: Insight sentence ----------
+        recent7 = rows[:7]
+        prev7 = rows[7:14]
+
+        joins_7 = sum(j for _, j, _ in recent7)
+        joins_prev7 = sum(j for _, j, _ in prev7) if prev7 else 0
+
+        if joins_prev7 <= 0 and joins_7 <= 0:
+            growth_str = "0%"
+        elif joins_prev7 <= 0 and joins_7 > 0:
+            growth_str = "+100%"
+        else:
+            change = (joins_7 - joins_prev7) / max(joins_prev7, 1e-9) * 100.0
+            growth_str = f"{change:+.0f}%"
+
+        total_dau_days = sum(int(c) for _, c in dau_7d) if dau_7d else 0
+        if total_dau_days > 0 and total_msgs_7d > 0:
+            msgs_per_active = total_msgs_7d / total_dau_days
+        else:
+            msgs_per_active = 0.0
+
+        lines.append(
+            t(
+                "analytics.insight",
+                user_id=cb.from_user.id,
+                growth=growth_str,
+                mpu=f"{msgs_per_active:.1f}",
+            )
+        )
     else:
         lines.append(t("analytics.pro_required_note", user_id=cb.from_user.id))
 
@@ -707,11 +775,11 @@ async def tenant_analytics_view(cb: CallbackQuery):
     text = "\n".join(lines)
     await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
-
 @router.callback_query(F.data == "tenant_reports")
 async def tenant_reports_cb(cb: CallbackQuery):
     if not cb.from_user:
-        await cb.answer(); return
+        await cb.answer()
+        return
     if not _is_owner(cb.from_user.id):
         if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
             return
@@ -723,51 +791,66 @@ async def tenant_reports_cb(cb: CallbackQuery):
 
     await _edit_or_send(cb, t("reports.select_chat", user_id=cb.from_user.id), _reports_kb(cb.from_user.id, chats))
 
-
-@router.callback_query(F.data == "group_tools")
-async def group_tools(cb: CallbackQuery):
-    plan = await get_user_subscription_status(cb.from_user.id)
-    is_pro = str(plan).lower() == "pro"
-
-    help_text = t("group_tools.help", user_id=cb.from_user.id)
-
+# --- Feature explainers (Pro gating honoured) ---
+@router.callback_query(F.data == "feature_card_force_join")
+async def feature_card_force_join(cb: CallbackQuery):
+    is_pro = await _is_pro_user(cb.from_user.id)
+    body = (
+        "Require users to join your channels before speaking.\n"
+        "• Auto-mute new members\n"
+        "• DM with join buttons\n"
+        "• One-tap unmute after join\n\n"
+    )
     if is_pro:
-        text = t("group_tools.pro_enabled_prefix", user_id=cb.from_user.id) + help_text
+        text = "🔒 <b>Require Channels</b>\n\n" + body + "You have Pro ✅. Use the <b>🔒 Require Channels</b> button in the dashboard to configure it."
     else:
-        text = t("group_tools.pro_required_prefix", user_id=cb.from_user.id) + help_text
+        text = "🔒 <b>Require Channels</b>\n\n" + body + "Available in <b>Pro</b>. Use /pro or the ⭐ button to upgrade."
+    await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
-    await cb.message.edit_text(text, reply_markup=None)
-    await cb.answer()
-
+@router.callback_query(F.data == "feature_card_mass_dm")
+async def feature_card_mass_dm(cb: CallbackQuery):
+    is_pro = await _is_pro_user(cb.from_user.id)
+    body = (
+        "DM the audience who joined with your referral link.\n"
+        "• Filter by phone / username / name length\n"
+        "• Sends in safe batches\n\n"
+    )
+    if is_pro:
+        text = "📣 <b>Mass DM</b>\n\n" + body + "You have Pro ✅. Use the <b>📣 Mass DM</b> button in the dashboard to send campaigns."
+    else:
+        text = "📣 <b>Mass DM</b>\n\n" + body + "Available in <b>Pro</b>. Use /pro or the ⭐ button to upgrade."
+    await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
 @router.callback_query(F.data == "help")
 async def help_cb(cb: CallbackQuery):
     text = t("help.title", user_id=cb.from_user.id) + t("help.body", user_id=cb.from_user.id)
     await _edit_or_send(cb, text, user_dashboard_kb(cb.from_user.id))
 
-
 @router.callback_query(F.data == "tenant_settings")
 async def tenant_settings_cb(cb: CallbackQuery):
-    if not cb.from_user: await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     if not _is_owner(cb.from_user.id):
-        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id): return
+        if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
+            return
     await render_settings(cb, cb.from_user.id)
 
 @router.callback_query(F.data == "settings:lang")
 async def cb_open_language(cb: CallbackQuery):
     if not cb.from_user:
-        await cb.answer(); 
+        await cb.answer()
         return
     await _edit_or_send(cb, t("lang.title", user_id=cb.from_user.id), language_kb())
 
 @router.callback_query(F.data.startswith("settings:set_lang:"))
 async def cb_set_language(cb: CallbackQuery):
     if not cb.from_user:
-        await cb.answer(); 
+        await cb.answer()
         return
     lang = (cb.data or "").split(":")[-1]
     if lang not in ("en", "fr"):
-        await cb.answer(); 
+        await cb.answer()
         return
     await set_language(cb.from_user.id, lang)
     remember_language(cb.from_user.id, lang)
@@ -777,6 +860,6 @@ async def cb_set_language(cb: CallbackQuery):
 @router.callback_query(F.data == "settings:back")
 async def cb_settings_back(cb: CallbackQuery):
     if not cb.from_user:
-        await cb.answer(); 
+        await cb.answer()
         return
     await render_settings(cb, cb.from_user.id)

@@ -157,6 +157,13 @@ def _plan_view_kb(
                 callback_data=f"ap:toggle:{code}",
             ),
         ],
+        # --- MINIMAL NEW BUTTON: make plan free for everyone (price=0) ---
+        [
+            InlineKeyboardButton(
+                text=t("ap.set_free_btn", user_id=user_id),
+                callback_data=f"ap:set_free:{code}",
+            )
+        ],
         [
             InlineKeyboardButton(
                 text=t("ap.view_back_to_list", user_id=user_id),
@@ -177,11 +184,14 @@ def _plan_view_kb(
 
 async def _ensure_defaults():
     """
-    Create / refresh default plans:
+    Ensure default plans exist:
       - PRO_WEEK   (7 days)
       - PRO_MONTH  (30 days)
       - PRO_YEAR   (365 days)
-    Admin can later change their prices from the UI.
+
+    IMPORTANT:
+      We DO NOT overwrite price_stars or duration_days on conflict,
+      so admin price changes persist.
     """
     async with get_con() as con:
         for code, title, desc, price, days in [
@@ -212,12 +222,11 @@ async def _ensure_defaults():
                 INSERT INTO public.plans (code, title, description, price_stars, duration_days, is_active)
                 VALUES ($1,$2,$3,$4,$5,true)
                 ON CONFLICT (code) DO UPDATE SET
-                  title         = EXCLUDED.title,
-                  description   = EXCLUDED.description,
-                  price_stars   = EXCLUDED.price_stars,
-                  duration_days = EXCLUDED.duration_days,
-                  is_active     = true,
-                  updated_at    = now()
+                  title       = EXCLUDED.title,
+                  description = EXCLUDED.description,
+                  -- do NOT overwrite price_stars or duration_days
+                  is_active   = true,
+                  updated_at  = now()
                 """,
                 code,
                 title,
@@ -498,6 +507,34 @@ async def ap_receive_custom_price(msg: Message, state: FSMContext):
     await _render_plan(msg, code)
 
 
+# ---- NEW: one-tap “Set free (0⭐)” ----
+
+async def ap_set_free(cb: CallbackQuery):
+    if not _is_owner(cb.from_user.id if cb.from_user else None):
+        try:
+            await cb.answer(t("ap.not_allowed", user_id=cb.from_user.id), show_alert=True)
+        except TelegramBadRequest:
+            pass
+        return
+
+    parts = (cb.data or "").split(":", 2)
+    code = parts[2] if len(parts) == 3 else ""
+
+    updated = await set_plan_price(code, 0)
+    if not updated:
+        await cb.message.answer(t("ap.plan_not_found", user_id=cb.from_user.id))
+        return
+
+    # Re-render the plan card with updated price (0⭐)
+    await _render_plan(cb, code)
+
+    # Toast confirmation (no new message pushing UI up)
+    try:
+        await cb.answer(t("ap.free_set_ok", user_id=cb.from_user.id, code=code))
+    except TelegramBadRequest:
+        pass
+
+
 # ---- helper called from admin_panel.py ----
 
 async def _render_admin_plans(cb_or_msg):
@@ -518,6 +555,7 @@ def register(dp):
     dp.callback_query.register(ap_toggle, F.data.startswith("ap:toggle:"))
     dp.callback_query.register(ap_delta, F.data.startswith("ap:delta:"))
     dp.callback_query.register(ap_set_custom, F.data.startswith("ap:set_custom:"))
+    dp.callback_query.register(ap_set_free, F.data.startswith("ap:set_free:"))  # <<< NEW
 
     # FSM message handler for custom price
     dp.message.register(ap_receive_custom_price, CustomPriceStates.waiting_price)

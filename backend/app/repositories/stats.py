@@ -1,6 +1,6 @@
 # backend/app/repositories/stats.py
 from __future__ import annotations
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from datetime import date, datetime
 
 from app.db import get_con
@@ -56,6 +56,20 @@ async def upsert_chat_user_index(chat_id: int, tg_id: int, is_member: bool, ts: 
             """,
             chat_id, tg_id, ts, is_member
         )
+
+async def get_is_member(chat_id: int, tg_id: int) -> Optional[bool]:
+    """
+    Return current membership flag for this user in this chat, if any.
+    Used to deduplicate joins/leaves when multiple updates fire.
+    """
+    async with get_con() as con:
+        row = await con.fetchrow(
+            "SELECT is_member FROM chat_user_index WHERE chat_id = $1 AND tg_id = $2",
+            chat_id, tg_id
+        )
+    if not row:
+        return None
+    return bool(row["is_member"])
 
 async def upsert_channel_member_count(chat_id: int, d: date, count: int) -> None:
     async with get_con() as con:

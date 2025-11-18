@@ -40,13 +40,36 @@ def _plans_kb(user_id: int, plans: List[Dict]) -> InlineKeyboardMarkup:
         title = str(p["title"])
         price = int(p["price_stars"])
         dur = int(p["duration_days"])
+        label = (
+            t("pay.buy_btn_free", user_id=user_id, title=title, days=dur)
+            if price == 0 else
+            t("pay.buy_btn", user_id=user_id, title=title, price=price, days=dur)
+        )
         rows.append([
             InlineKeyboardButton(
-                text=t("pay.buy_btn", user_id=user_id, title=title, price=price, days=dur),
+                text=label,
                 callback_data=f"pro_buy:{code}",
             )
         ])
+    # Back button to dashboard
+    rows.append([InlineKeyboardButton(text=t("pay.back_btn", user_id=user_id), callback_data="tenant_overview")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _back_to_dashboard_kb(user_id: int) -> InlineKeyboardMarkup:
+    """
+    Minimal keyboard to let the user return to the main dashboard.
+    """
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=t("pay.back_btn", user_id=user_id),
+                    callback_data="tenant_overview",
+                )
+            ]
+        ]
+    )
 
 
 def _status_text(user_id: int, plan_status: str, expiry: Optional[datetime]) -> str:
@@ -89,6 +112,45 @@ async def cmd_pro(msg: Message) -> None:
         await _safe_answer(msg, t("pay.load_error", user_id=(msg.from_user.id if msg.from_user else None), err=html.escape(str(e))))
 
 
+@router.callback_query(F.data == "pro_open")
+async def on_tenant_pro(cb: CallbackQuery) -> None:
+    """
+    Handler for the “⭐ Upgrade to Pro” button on the dashboard.
+    Reuses the /pro flow so behavior stays consistent.
+    """
+    if not cb.from_user:
+        return await cb.answer()
+
+    # ACK callback
+    try:
+        await cb.answer()
+    except TelegramBadRequest:
+        pass
+
+    uid = cb.from_user.id
+
+    try:
+        status = await get_user_subscription_status(uid)
+        expiry = await get_user_subscription_expiry(uid)
+        plans = await list_active_plans()
+
+        if not plans:
+            await cb.message.edit_text(t("pay.no_plans", user_id=uid))
+            return
+
+        text = _status_text(uid, status, expiry)
+        await cb.message.edit_text(text, reply_markup=_plans_kb(uid, plans))
+    except Exception as e:
+        log.exception("on_tenant_pro failed: %s", e)
+        await cb.message.answer(
+            t(
+                "pay.load_error",
+                user_id=uid,
+                err=html.escape(str(e)),
+            )
+        )
+
+
 @router.callback_query(F.data.startswith("pro_buy:"))
 async def on_buy(cb: CallbackQuery) -> None:
     if not cb.from_user:
@@ -110,8 +172,49 @@ async def on_buy(cb: CallbackQuery) -> None:
         title = str(plan["title"])
         description = str(plan["description"])
         price_stars = int(plan["price_stars"])
+        duration_days = int(plan["duration_days"])
 
-        # For Telegram Stars (XTR), provider_token MUST be an empty string.
+        # If plan is FREE (0⭐) → activate immediately (no invoice)
+        if price_stars == 0:
+            uid = cb.from_user.id
+
+            # Prevent stacking the free plan by spamming the button:
+            # if the user already has an active Pro subscription, don't extend it.
+            current_exp = await get_user_subscription_expiry(uid)
+            if current_exp and current_exp > datetime.now(UTC):
+                back_kb = _back_to_dashboard_kb(uid)
+                exp_txt = current_exp.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+                await cb.message.answer(
+                    t("pay.already_pro_no_extend", user_id=uid, expiry=exp_txt),
+                    reply_markup=back_kb,
+                )
+                return
+
+            await upsert_subscription_on_payment(
+                uid,
+                code,
+                duration_days,
+                0,              # amount_stars
+                None,           # provider_payment_charge_id
+                None,           # telegram_payment_charge_id
+            )
+            expiry = await get_user_subscription_expiry(uid)
+            back_kb = _back_to_dashboard_kb(uid)
+
+            if expiry:
+                exp_txt = expiry.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
+                await cb.message.answer(
+                    t("pay.activated_free_ok", user_id=uid, expiry=exp_txt),
+                    reply_markup=back_kb,
+                )
+            else:
+                await cb.message.answer(
+                    t("pay.activated_free_ok_noexp", user_id=uid),
+                    reply_markup=back_kb,
+                )
+            return
+
+        # Stars payment flow
         prices = [LabeledPrice(label=title, amount=price_stars)]
         payload = f"plan:{code}"
 
@@ -168,11 +271,21 @@ async def on_successful_payment(msg: Message) -> None:
         )
 
         expiry = await get_user_subscription_expiry(uid)
+        back_kb = _back_to_dashboard_kb(uid)
+
         if expiry:
             exp_txt = expiry.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC")
-            await _safe_answer(msg, t("pay.paid_ok_with_exp", user_id=uid, expiry=exp_txt))
+            await _safe_answer(
+                msg,
+                t("pay.paid_ok_with_exp", user_id=uid, expiry=exp_txt),
+                back_kb,
+            )
         else:
-            await _safe_answer(msg, t("pay.paid_ok", user_id=uid))
+            await _safe_answer(
+                msg,
+                t("pay.paid_ok", user_id=uid),
+                back_kb,
+            )
     except Exception as e:
         log.exception("successful_payment failed: %s", e)
         await _safe_answer(msg, t("pay.paid_update_fail", user_id=(msg.from_user.id if msg.from_user else None), err=html.escape(str(e))))

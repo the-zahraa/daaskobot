@@ -1,12 +1,11 @@
 # backend/app/handlers/members.py
 from __future__ import annotations
 
-from aiogram import F
-
 import logging
-from datetime import datetime, timezone, date
-from typing import Optional
+from datetime import datetime, timezone, date, timedelta
+from typing import Optional, Set
 
+from aiogram import F
 from aiogram.types import ChatMemberUpdated, Message, ChatPermissions
 from aiogram.enums.chat_type import ChatType
 
@@ -19,10 +18,13 @@ from app.repositories.stats import (
 )
 from app.repositories.required import list_group_targets
 from app.handlers.start import _is_member, force_join_kb_group
-from app.services.i18n import t  # ← i18n
+from app.services.i18n import t  # i18n
 
 log = logging.getLogger("handlers.members")
 UTC = timezone.utc
+
+# Chats where we know Telegram sends real ChatMemberUpdated JOIN/LEAVE
+_CHATS_WITH_REAL_CM: Set[int] = set()
 
 
 def _now() -> datetime:
@@ -33,10 +35,57 @@ def _today() -> date:
     return _now().date()
 
 
+def _status_code(raw) -> str:
+    """
+    Normalize ChatMember status (enum or string) to a lowercase string.
+    """
+    if raw is None:
+        return ""
+    val = getattr(raw, "value", raw)
+    return str(val).lower().strip()
+
+
+# ---------------- Dedup helper ----------------
+
+async def _recent_member_event_exists(
+    chat_id: int,
+    user_id: int,
+    kind: str,
+    window_seconds: int = 300,  # 5 minutes
+) -> bool:
+    """
+    Check if we already recorded the same kind of event (join/leave)
+    for this chat + user in the last `window_seconds`.
+
+    This protects us from any double ChatMemberUpdated / service-message
+    combo that might happen in channels or weird Telegram edge cases.
+    """
+    since = _now() - timedelta(seconds=window_seconds)
+    async with get_con() as con:
+        row = await con.fetchrow(
+            """
+            SELECT 1
+            FROM member_events
+            WHERE chat_id = $1
+              AND tg_id   = $2
+              AND kind    = $3
+              AND happened_at >= $4
+            LIMIT 1
+            """,
+            chat_id,
+            user_id,
+            kind,
+            since,
+        )
+    return bool(row)
+
+
+# ---------------- Campaign helpers ----------------
+
 async def _ensure_groups_channels_row(chat_id: int) -> None:
     """
-    Your join_logs.chat_id has a FK to groups_channels(telegram_id).
-    Make sure a row exists to satisfy the FK, but keep it minimal.
+    join_logs.chat_id has a FK to groups_channels(telegram_id TEXT).
+    Make sure a row exists, but don't block if it fails.
     """
     try:
         async with get_con() as con:
@@ -46,10 +95,9 @@ async def _ensure_groups_channels_row(chat_id: int) -> None:
                 VALUES ($1)
                 ON CONFLICT (telegram_id) DO NOTHING
                 """,
-                str(chat_id),  # groups_channels.telegram_id is TEXT
+                str(chat_id),
             )
     except Exception as e:
-        # Don't block attribution if this fails; we'll still try to write campaign_joins
         log.warning("ensure groups_channels failed for chat=%s: %s", chat_id, e)
 
 
@@ -68,7 +116,8 @@ async def _lookup_campaign_name(chat_id: int, invite_url: str) -> Optional[str]:
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            chat_id, invite_url
+            chat_id,
+            invite_url,
         )
         if row:
             return row["campaign_name"]
@@ -93,21 +142,21 @@ async def _lookup_campaign_name(chat_id: int, invite_url: str) -> Optional[str]:
             ORDER BY cl.created_at DESC
             LIMIT 1
             """,
-            chat_id, invite_url
+            chat_id,
+            invite_url,
         )
         return row["campaign_name"] if row else None
 
 
 async def _record_campaign_join(chat_id: int, user_id: int, invite_link_url: str) -> None:
     """
-    Write-through persistence:
-      • join_logs (audit) — may fail because of FK, but must not block attribution
-      • campaign_joins (final attribution used by Top 30d)
+    Write-through:
+      • join_logs (audit; may fail FK, non-fatal)
+      • campaign_joins (used for analytics)
     """
-    # 1) Try to satisfy FK upfront; ignore failures
     await _ensure_groups_channels_row(chat_id)
 
-    # 2) Try audit (join_logs). If it fails, log and continue.
+    # Audit
     try:
         async with get_con() as con:
             await con.execute(
@@ -115,14 +164,19 @@ async def _record_campaign_join(chat_id: int, user_id: int, invite_link_url: str
                 INSERT INTO public.join_logs (chat_id, user_id, event_type, invite_link, "timestamp")
                 VALUES ($1, $2, 'join', $3, now())
                 """,
-                str(chat_id),  # join_logs.chat_id is TEXT in your DB
+                str(chat_id),
                 user_id,
                 invite_link_url,
             )
     except Exception as e:
-        log.warning("join_logs insert failed (non-fatal): chat=%s user=%s err=%s", chat_id, user_id, e)
+        log.warning(
+            "join_logs insert failed (non-fatal): chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
 
-    # 3) Map and write to campaign_joins (this powers Top 30d)
+    # Attribution
     try:
         campaign_name = await _lookup_campaign_name(chat_id, invite_link_url)
         if campaign_name:
@@ -132,132 +186,218 @@ async def _record_campaign_join(chat_id: int, user_id: int, invite_link_url: str
                     INSERT INTO public.campaign_joins (chat_id, user_id, campaign_name, happened_at)
                     VALUES ($1, $2, $3, now())
                     """,
-                    chat_id, user_id, campaign_name
+                    chat_id,
+                    user_id,
+                    campaign_name,
                 )
-            log.info("campaign attribution: %r chat=%s user=%s", campaign_name, chat_id, user_id)
+            log.info(
+                "campaign attribution: %r chat=%s user=%s",
+                campaign_name,
+                chat_id,
+                user_id,
+            )
         else:
-            log.info("campaign attribution: none chat=%s user=%s (link=%s)", chat_id, user_id, invite_link_url)
+            log.info(
+                "campaign attribution: none chat=%s user=%s (link=%s)",
+                chat_id,
+                user_id,
+                invite_link_url,
+            )
     except Exception as e:
-        log.warning("campaign_joins insert failed: chat=%s user=%s err=%s", chat_id, user_id, e)
+        log.warning(
+            "campaign_joins insert failed: chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
 
+
+# ---------------- Core join/leave writers ----------------
 
 async def _handle_join(chat_id: int, user_id: int, invite_link_url: Optional[str]) -> None:
+    # 🔁 Dedup: if we already saw a JOIN very recently for this user+chat, skip
+    if await _recent_member_event_exists(chat_id, user_id, "join"):
+        log.info(
+            "members: SKIP duplicate JOIN chat=%s user=%s",
+            chat_id,
+            user_id,
+        )
+        return
+
     ts = _now()
     d = ts.date()
+    log.info(
+        "members: JOIN detected chat=%s user=%s date=%s invite=%s",
+        chat_id,
+        user_id,
+        d,
+        invite_link_url,
+    )
     await inc_join(chat_id, d)
     await record_event(chat_id, user_id, ts, "join")
     await upsert_chat_user_index(chat_id, user_id, True, ts)
     if invite_link_url:
         await _record_campaign_join(chat_id, user_id, invite_link_url)
-    # Note: actual restricting + DM happens in handlers where `bot` is available.
 
 
 async def _handle_leave(chat_id: int, user_id: int) -> None:
+    # 🔁 Dedup: if we already saw a LEAVE very recently for this user+chat, skip
+    if await _recent_member_event_exists(chat_id, user_id, "leave"):
+        log.info(
+            "members: SKIP duplicate LEAVE chat=%s user=%s",
+            chat_id,
+            user_id,
+        )
+        return
+
     ts = _now()
     d = ts.date()
+    log.info("members: LEAVE detected chat=%s user=%s date=%s", chat_id, user_id, d)
     await inc_leave(chat_id, d)
     await record_event(chat_id, user_id, ts, "leave")
     await upsert_chat_user_index(chat_id, user_id, False, ts)
 
 
-# ---- Single source of truth: ChatMemberUpdated only (avoid double counts) ----
+# ---------------- ChatMemberUpdated handler ----------------
 
 async def on_member_update(upd: ChatMemberUpdated) -> None:
     """
-    Telegram provides `invite_link` here if user joined via a link CREATED BY THIS BOT.
+    Main source of truth where Telegram actually sends member transitions.
+
+    JOIN when:  old ∉ MEMBERish  AND new ∈ MEMBERish
+    LEAVE when: old ∈ MEMBERish  AND new ∈ LEFTish
     """
     chat_id = upd.chat.id
-    old_status = getattr(upd.old_chat_member, "status", None)
-    new_status = getattr(upd.new_chat_member, "status", None)
+
+    old_status_raw = getattr(upd.old_chat_member, "status", None)
+    new_status_raw = getattr(upd.new_chat_member, "status", None)
+    old_status = _status_code(old_status_raw)
+    new_status = _status_code(new_status_raw)
 
     joined_user = getattr(upd.new_chat_member, "user", None)
     user_id = getattr(joined_user, "id", None)
     if user_id is None:
         return
 
+    log.info(
+        "members: ChatMemberUpdated chat=%s user=%s old=%s new=%s",
+        chat_id,
+        user_id,
+        old_status,
+        new_status,
+    )
+
     MEMBERish = {"member", "restricted", "administrator", "creator"}
     LEFTish = {"left", "kicked"}
 
+    joined = (new_status in MEMBERish) and (old_status not in MEMBERish)
+    left = (new_status in LEFTish) and (old_status in MEMBERish)
+
+    if joined or left:
+        _CHATS_WITH_REAL_CM.add(chat_id)
+
     # JOIN
-    if (new_status in MEMBERish) and (old_status not in MEMBERish):
+    if joined:
         invite_url: Optional[str] = None
         inv = getattr(upd, "invite_link", None)
         if inv is not None:
-            invite_url = getattr(inv, "invite_link", None) or None
-            if invite_url is not None:
-                invite_url = str(invite_url)
+            raw_link = getattr(inv, "invite_link", None)
+            if raw_link:
+                invite_url = str(raw_link)
         if invite_url:
-            log.info("campaign: ChatMemberUpdated invited via link=%s chat=%s user=%s", invite_url, chat_id, user_id)
+            log.info(
+                "campaign: ChatMemberUpdated invited via link=%s chat=%s user=%s",
+                invite_url,
+                chat_id,
+                user_id,
+            )
 
         await _handle_join(chat_id, user_id, invite_url)
 
-        # 🔒 Immediate restrict + DM if required
+        # Force-join applies only to groups / supergroups
         try:
-            targets = await list_group_targets(chat_id)
-            if targets:
-                try:
-                    perms = ChatPermissions(
-                        can_send_messages=False,
-                        can_send_audios=False,
-                        can_send_documents=False,
-                        can_send_photos=False,
-                        can_send_videos=False,
-                        can_send_video_notes=False,
-                        can_send_voice_notes=False,
-                        can_send_polls=False,
-                        can_send_other_messages=False,
-                        can_add_web_page_previews=False
-                    )
-                    await upd.bot.restrict_chat_member(chat_id, user_id, permissions=perms)
-                except Exception:
-                    pass
-                # DM prompt
-                try:
-                    await upd.bot.send_message(
-                        user_id,
-                        t("force_join.dm_prompt", user_id=user_id, group=getattr(upd.chat, "title", "this group")),
-                        reply_markup=force_join_kb_group(user_id, chat_id, targets),
-                    )
-                except Exception:
-                    pass
+            if upd.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+                targets = await list_group_targets(chat_id)
+            else:
+                targets = []
         except Exception:
-            pass
+            targets = []
+
+        if targets and not (joined_user and joined_user.is_bot):
+            # Mute
+            try:
+                perms = ChatPermissions(
+                    can_send_messages=False,
+                    can_send_audios=False,
+                    can_send_documents=False,
+                    can_send_photos=False,
+                    can_send_videos=False,
+                    can_send_video_notes=False,
+                    can_send_voice_notes=False,
+                    can_send_polls=False,
+                    can_send_other_messages=False,
+                    can_add_web_page_previews=False,
+                )
+                await upd.bot.restrict_chat_member(chat_id, user_id, permissions=perms)
+            except Exception:
+                pass
+            # DM
+            try:
+                await upd.bot.send_message(
+                    user_id,
+                    t(
+                        "force_join.dm_prompt",
+                        user_id=user_id,
+                        group=getattr(upd.chat, "title", "this group"),
+                    ),
+                    reply_markup=force_join_kb_group(user_id, chat_id, targets),
+                )
+            except Exception:
+                pass
         return
 
     # LEAVE
-    if (new_status in LEFTish) and (old_status in MEMBERish):
+    if left:
         await _handle_leave(chat_id, user_id)
         return
 
 
-# ---- Public groups fallback (service messages) ----
+# ---------------- Service message fallbacks ----------------
+
 def register(dp) -> None:
-    # Primary: chat_member updates
+    # Primary: CM updates
     dp.chat_member.register(on_member_update)
 
-    # Fallbacks ONLY for public groups (have a username); used when ChatMemberUpdated isn't delivered
+    # Fallbacks ONLY for groups/supergroups where CM events don't fire
     async def on_new_members_service(msg: Message):
         if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
             return
-        # Only public groups (username present)
-        if not getattr(msg.chat, "username", None):
+
+        # If we already have real CM events for this chat, don't double-count
+        if msg.chat.id in _CHATS_WITH_REAL_CM:
             return
+
         users = msg.new_chat_members or []
         for u in users:
             if not u or u.is_bot:
                 continue
 
+            log.info(
+                "members: FALLBACK join via service message chat=%s user=%s",
+                msg.chat.id,
+                u.id,
+            )
+
             await _handle_join(msg.chat.id, u.id, invite_link_url=None)
 
-            # Restrict + DM as in on_member_update
-            # (No outer try without except — errors handled per call)
+            # Force-join only for groups with targets
             try:
                 targets = await list_group_targets(msg.chat.id)
             except Exception:
                 targets = []
 
             if targets:
-                # Restrict
+                # Mute
                 try:
                     perms = ChatPermissions(
                         can_send_messages=False,
@@ -269,17 +409,23 @@ def register(dp) -> None:
                         can_send_voice_notes=False,
                         can_send_polls=False,
                         can_send_other_messages=False,
-                        can_add_web_page_previews=False
+                        can_add_web_page_previews=False,
                     )
-                    await msg.bot.restrict_chat_member(msg.chat.id, u.id, permissions=perms)
+                    await msg.bot.restrict_chat_member(
+                        msg.chat.id, u.id, permissions=perms
+                    )
                 except Exception:
                     pass
 
-                # DM prompt
+                # DM
                 try:
                     await msg.bot.send_message(
                         u.id,
-                        t("force_join.dm_prompt", user_id=u.id, group=(msg.chat.title or "this group")),
+                        t(
+                            "force_join.dm_prompt",
+                            user_id=u.id,
+                            group=(msg.chat.title or "this group"),
+                        ),
                         reply_markup=force_join_kb_group(u.id, msg.chat.id, targets),
                     )
                 except Exception:
@@ -288,11 +434,18 @@ def register(dp) -> None:
     async def on_left_member_service(msg: Message):
         if msg.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
             return
-        if not getattr(msg.chat, "username", None):
+        if msg.chat.id in _CHATS_WITH_REAL_CM:
             return
+
         u = msg.left_chat_member
         if not u or u.is_bot:
             return
+
+        log.info(
+            "members: FALLBACK leave via service message chat=%s user=%s",
+            msg.chat.id,
+            u.id,
+        )
         await _handle_leave(msg.chat.id, u.id)
 
     dp.message.register(on_new_members_service, F.new_chat_members)

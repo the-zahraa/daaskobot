@@ -32,6 +32,7 @@ from app import db as app_db  # provides init_db(), close_db(), get_con()
 # -----------------------------------------------------------------------------
 from app.services.i18n import init_i18n
 
+
 def _safe_import(module_path: str):
     try:
         return __import__(module_path, fromlist=["*"])
@@ -55,7 +56,7 @@ async def run_polling() -> None:
 
     # IMPORTANT: keep 'payments' first to avoid greedy handlers swallowing /pro
     modules = [
-        "app.handlers.payments",        # <<— moved to the top
+        "app.handlers.payments",        # <<— kept at the top
         "app.handlers.start",
         "app.handlers.group_tools_dm",
         "app.handlers.members",
@@ -65,6 +66,7 @@ async def run_polling() -> None:
         "app.handlers.broadcast",
         "app.handlers.campaigns",
         "app.handlers.chat_link",
+        "app.handlers.auto_link",       # <<< NEW: auto-link when bot becomes admin
         "app.handlers.activity",
     ]
     for name in modules:

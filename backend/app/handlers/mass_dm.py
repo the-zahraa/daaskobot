@@ -16,6 +16,7 @@ from app.repositories.referrals import (
     count_referred_with_filters,
     select_user_ids_for_customer,
 )
+from app.repositories.subscriptions import get_user_subscription_status
 from app.handlers.broadcast import _send_in_chunks  # reuse
 
 router = Router()
@@ -26,7 +27,11 @@ class MassDMState(StatesGroup):
     set_un_len = State()
     set_nm_len = State()
 
-# ---- Keyboards ----
+# ---- helpers ----
+
+async def _is_pro(user_id: int) -> bool:
+    plan = await get_user_subscription_status(user_id)
+    return str(plan).lower() == "pro"
 
 def _home_kb(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -64,7 +69,7 @@ def _send_back_kb(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⬅️ Back", callback_data="mdm:back")]
     ])
 
-# ---- Helpers ----
+# ---- Filters state helpers ----
 
 async def _get_filters(state: FSMContext):
     data = await state.get_data()
@@ -89,17 +94,30 @@ async def _set_filters(state: FSMContext, *, has_phone=None, un_min=None, nm_min
 @router.callback_query(F.data == "massdm_home")
 async def mdm_home(cb: CallbackQuery, state: FSMContext):
     if not cb.from_user or (cb.message and cb.message.chat.type != ChatType.PRIVATE):
-        await cb.answer(); return
+        await cb.answer()
+        return
+
+    # Pro gate
+    if not await _is_pro(cb.from_user.id):
+        # Short upsell using existing i18n text
+        await cb.message.edit_text(t("pro.popups.massdm", user_id=cb.from_user.id))
+        await cb.answer()
+        return
+
     await state.clear()
-    await cb.message.edit_text("📣 <b>Mass DM</b>\nSend messages to people who <b>joined with your link</b>.", reply_markup=_home_kb(cb.from_user.id))
+    await cb.message.edit_text(
+        "📣 <b>Mass DM</b>\nSend messages to people who <b>joined with your link</b>.",
+        reply_markup=_home_kb(cb.from_user.id),
+    )
     await cb.answer()
 
 # ---- Get link ----
 
 @router.callback_query(F.data == "mdm:get_link")
 async def mdm_get_link(cb: CallbackQuery, state: FSMContext):
-    if not cb.from_user: 
-        await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     bot = cast(Bot, cb.bot)
     code = await get_or_create_ref_code(cb.from_user.id)
     me = await bot.get_me()
@@ -118,8 +136,9 @@ async def mdm_get_link(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "mdm:aud")
 async def mdm_aud(cb: CallbackQuery, state: FSMContext):
-    if not cb.from_user: 
-        await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     has_phone, un_min, nm_min = await _get_filters(state)
     count = await count_referred_with_filters(cb.from_user.id, has_phone, un_min, nm_min)
     text = (
@@ -140,7 +159,10 @@ async def mdm_toggle_hp(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "mdm:set_un")
 async def mdm_set_un(cb: CallbackQuery, state: FSMContext):
     await state.set_state(MassDMState.set_un_len)
-    await cb.message.edit_text("Send a number for <b>min username letters</b> (e.g., 0, 5, 8).", reply_markup=_send_back_kb(cb.from_user.id))
+    await cb.message.edit_text(
+        "Send a number for <b>min username letters</b> (e.g., 0, 5, 8).",
+        reply_markup=_send_back_kb(cb.from_user.id),
+    )
     await cb.answer()
 
 @router.message(MassDMState.set_un_len)
@@ -148,7 +170,11 @@ async def mdm_recv_un(msg: Message, state: FSMContext):
     try:
         n = max(0, int((msg.text or "0").strip()))
     except Exception:
-        await msg.answer("Please send a number like 0, 5, 8.", reply_markup=_send_back_kb(msg.from_user.id)); return
+        await msg.answer(
+            "Please send a number like 0, 5, 8.",
+            reply_markup=_send_back_kb(msg.from_user.id),
+        )
+        return
     await _set_filters(state, un_min=n)
     await state.clear()
     await msg.answer("Saved.", reply_markup=None)
@@ -156,7 +182,10 @@ async def mdm_recv_un(msg: Message, state: FSMContext):
 @router.callback_query(F.data == "mdm:set_nm")
 async def mdm_set_nm(cb: CallbackQuery, state: FSMContext):
     await state.set_state(MassDMState.set_nm_len)
-    await cb.message.edit_text("Send a number for <b>min name letters</b> (e.g., 0, 5, 8).", reply_markup=_send_back_kb(cb.from_user.id))
+    await cb.message.edit_text(
+        "Send a number for <b>min name letters</b> (e.g., 0, 5, 8).",
+        reply_markup=_send_back_kb(cb.from_user.id),
+    )
     await cb.answer()
 
 @router.message(MassDMState.set_nm_len)
@@ -164,7 +193,11 @@ async def mdm_recv_nm(msg: Message, state: FSMContext):
     try:
         n = max(0, int((msg.text or "0").strip()))
     except Exception:
-        await msg.answer("Please send a number like 0, 5, 8.", reply_markup=_send_back_kb(msg.from_user.id)); return
+        await msg.answer(
+            "Please send a number like 0, 5, 8.",
+            reply_markup=_send_back_kb(msg.from_user.id),
+        )
+        return
     await _set_filters(state, nm_min=n)
     await state.clear()
     await msg.answer("Saved.", reply_markup=None)
@@ -172,33 +205,49 @@ async def mdm_recv_nm(msg: Message, state: FSMContext):
 @router.callback_query(F.data == "mdm:back")
 async def mdm_back(cb: CallbackQuery, state: FSMContext):
     await state.clear()
-    await cb.message.edit_text("📣 <b>Mass DM</b>\nSend messages to people who <b>joined with your link</b>.", reply_markup=_home_kb(cb.from_user.id))
+    await cb.message.edit_text(
+        "📣 <b>Mass DM</b>\nSend messages to people who <b>joined with your link</b>.",
+        reply_markup=_home_kb(cb.from_user.id),
+    )
     await cb.answer()
 
 # ---- Compose & send ----
 
 @router.callback_query(F.data == "mdm:compose")
 async def mdm_compose(cb: CallbackQuery, state: FSMContext):
-    if not cb.from_user: 
-        await cb.answer(); return
+    if not cb.from_user:
+        await cb.answer()
+        return
     await state.set_state(MassDMState.composing)
-    await cb.message.edit_text("Send the message text to broadcast.\nUse /cancel to stop.", reply_markup=_send_back_kb(cb.from_user.id))
+    await cb.message.edit_text(
+        "Send the message text to broadcast.\nUse /cancel to stop.",
+        reply_markup=_send_back_kb(cb.from_user.id),
+    )
     await cb.answer()
 
 @router.message(MassDMState.composing)
 async def mdm_send(msg: Message, state: FSMContext):
-    if not msg.from_user: return
+    if not msg.from_user:
+        return
     text = msg.text or msg.caption
     if not text:
         await msg.answer("Please send text.")
         return
+
+    # Get filters BEFORE clearing state
+    has_phone, un_min, nm_min = await _get_filters(state)
     await state.clear()
 
-    has_phone, un_min, nm_min = await _get_filters(state)  # (state was cleared; we kept defaults if none set)
-    user_ids = await select_user_ids_for_customer(msg.from_user.id, has_phone, un_min or 0, nm_min or 0)
+    user_ids = await select_user_ids_for_customer(
+        msg.from_user.id,
+        has_phone,
+        un_min or 0,
+        nm_min or 0,
+    )
 
     if not user_ids:
-        await msg.answer("No one matches your filters yet."); return
+        await msg.answer("No one matches your filters yet.")
+        return
 
     await msg.answer(f"Sending to ~{len(user_ids)}. Please wait…")
     bot = cast(Bot, msg.bot)

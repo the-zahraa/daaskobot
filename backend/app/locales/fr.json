@@ -10,18 +10,59 @@
     }
   },
 
+  "pro": {
+  "popups": {
+    "force_join": "Coupe automatiquement le son des nouveaux jusqu’à ce qu’ils rejoignent vos chaînes requises.\n• Stoppe le spam et les liens\n• Augmente la portée des chaînes\n• Démuet en un clic après adhésion\n\nDisponible avec Pro. Utilisez ⭐ Passer à Pro.",
+    "campaigns": "Créez des liens d’invitation étiquetés et mesurez quelle campagne apporte des membres.\n• Création en un clic\n• Meilleures campagnes (30 j)\n• Liste claire par chat\n\nDisponible avec Pro. Utilisez ⭐ Passer à Pro.",
+    "massdm": "Envoyez un message à l’audience ayant rejoint via votre lien de parrainage.\n• Filtres par téléphone/nom d’utilisateur/longueur du nom\n• Envoi par lots sécurisés\n\nDisponible avec Pro. Utilisez ⭐ Passer à Pro."
+  }
+},
+
+"pay": {
+  "buy_btn": "Acheter {title} — {price}⭐ / {days}j",
+  "status_free_head": "⭐ <b>Votre offre : Free</b>\nPassez à Pro pour débloquer toutes les fonctions.",
+  "status_pro_with_exp": "✅ <b>Votre offre : Pro</b>\nExpire : <b>{expiry}</b>",
+  "status_pro_no_exp": "✅ <b>Votre offre : Pro</b>",
+  "no_plans": "Aucun forfait n’est disponible pour le moment.",
+  "load_error": "Impossible de charger les forfaits. Erreur : {err}",
+  "plan_unavailable": "Ce forfait n’est pas disponible.",
+  "invoice_fail": "Je n’ai pas pu créer la facture. Erreur : {err}",
+  "paid_unknown_plan": "Merci pour votre paiement ! (Code du forfait inconnu.)",
+  "paid_plan_missing": "Merci pour votre paiement, mais je n’ai pas trouvé le forfait.",
+  "paid_ok_with_exp": "✅ Paiement reçu. Pro est actif jusqu’au <b>{expiry}</b>.",
+  "paid_ok": "✅ Paiement reçu. Pro est actif.",
+  "paid_update_fail": "Le paiement a réussi mais je n’ai pas pu mettre à jour votre abonnement. Erreur : {err}",
+   "buy_btn_free": "Activer gratuitement : {title} — 0⭐ / {days}j",
+    "back_btn": "⬅️ Retour",
+    "activated_free_ok": "✅ Pro activé. Expire : <b>{expiry}</b>",
+    "activated_free_ok_noexp": "✅ Pro activé.",
+    "already_pro_no_extend": "Vous avez déjà un abonnement Pro actif jusqu’au {expiry}. Votre abonnement n’a pas été prolongé."
+
+
+}
+,
+
+
   "dash": {
-    "buttons": {
-      "overview": "🏠 Aperçu",
-      "linked_chats": "🔗 Chats liés",
-      "analytics": "📈 Analyses",
-      "reports": "🧾 Rapports",
-      "campaigns": "📣 Campagnes",
-      "group_tools": "📎 Outils de groupe",
-      "help": "❓ Aide",
-      "settings": "⚙️ Paramètres"
-    }
+  "buttons": {
+    "get_started": "🚀 Commencer",
+    "overview": "🏠 Vue d’ensemble",
+    "linked_chats": "🔗 Chats liés",
+    "analytics": "📈 Analyses",
+    "reports": "🧾 Rapports",
+    "campaigns": "📣 Campagnes",
+    "group_tools": "📎 Outils de groupe",
+    "help": "❓ Aide",
+    "settings": "⚙️ Réglages",
+    "campaign_tracking": "🎯 Suivi de campagnes",
+    "force_join": "🔒 Adhésion forcée",
+    "mass_dm": "📣 Mass DM",
+    "upgrade_pro": "⭐ Passer en Pro"
   },
+
+  "get_started": "👋 <b>Bienvenue sur Bot de gestion Daasko </b>\n\nVoici comment commencer :\n\n<b>1) Ajouter le bot à un groupe</b>\nUtilisez ce lien pour choisir un groupe et ajouter le bot comme administrateur :\n👉 https://t.me/analytiquesbot?startgroup=new\n\n<b>2) Ajouter le bot à vos chaînes</b>\nOuvrez votre chaîne → Administrateurs → Ajouter un administrateur → choisissez @analytiquesbot et donnez-lui les droits nécessaires.\n\n<b>3) Utiliser les boutons du tableau de bord</b>\n• 🔒 Adhésion forcée – obliger les nouveaux membres à rejoindre vos chaînes avant de pouvoir parler\n• 📈 Statistiques – voir les arrivées, départs et l’activité\n• 📣 Campagnes – créer des liens d’invitation avec libellé et statistiques\n• 📣 Messages de masse – envoyer des messages aux personnes qui ont rejoint via vos liens\n• 🧾 Rapports – exporter des rapports PDF clairs et professionnels\n\nVous pouvez toujours revenir ici avec /start."
+},
+
 
   "request_phone": {
     "button": "📱 Partager le numéro de téléphone",
@@ -76,20 +117,24 @@
     "no_tenant": "Aucun espace de travail trouvé pour l’instant. Démarrez le bot en privé et liez un chat d’abord."
   },
 
-  "analytics": {
-    "none_chats": "📈 Analyses\nAucun chat lié pour l’instant.",
-    "select_chat": "Sélectionnez un chat pour voir les analyses :",
-    "title_30d": "📈 <b>Analyses (30 derniers jours)</b>",
-    "total_joins": "• Total des arrivées : <b>{n}</b>",
-    "total_leaves": "• Total des départs : <b>{n}</b>",
-    "messages_7d": "• Messages (7 j) : <b>{n}</b>",
-    "avg_dau_7d": "• Utilisateurs actifs moyens (7 j) : <b>{avg}</b>",
-    "peak_hour": "• Heure de pointe (Europe/Helsinki, 30 j) : <b>{hour} h</b> — {count} messages",
-    "top_user_30d": "• Utilisateur le plus actif (30 j) : <b>{user}</b> — {count} messages",
-    "pro_required_note": "⭐️ Messages, DAU, heure de pointe et top utilisateurs sont des fonctions <b>Pro</b>. Utilisez /pro pour passer à l’offre Pro.",
-    "last7_header": "\n7 derniers jours (arrivées / départs) :",
-    "day_line": "{date} : +{joins} / -{leaves}"
-  },
+   "analytics": {
+  "none_chats": "📈 Statistiques\nAucun salon lié pour l’instant.",
+  "select_chat": "Choisissez un salon pour voir les statistiques :",
+  "title_30d": "📈 <b>Statistiques (30 derniers jours)</b>",
+  "total_joins": "• Arrivées totales : <b>{n}</b>",
+  "total_leaves": "• Départs totaux : <b>{n}</b>",
+  "net_growth_30d": "• Croissance nette (30 jours) : <b>{n}</b>",
+  "messages_7d": "• Messages (7 jours) : <b>{n}</b>",
+  "avg_dau_7d": "• Utilisateurs actifs moyens / jour (7 jours) : <b>{avg}</b>",
+  "peak_hour": "• Heure de pointe (Europe/Helsinki, 30 jours) : <b>{hour}:00</b> — {count} messages",
+  "top_user_30d": "• Utilisateur le plus actif (30 jours) : <b>{user}</b> — {count} messages",
+  "pro_required_note": "⭐️ Les messages, l’activité quotidienne, l’heure de pointe et les top utilisateurs sont des fonctions <b>Pro</b>. Utilisez /pro pour passer à Pro.",
+  "last7_header": "\n7 derniers jours (arrivées / départs) :",
+  "day_line": "{date} : +{joins} / -{leaves}",
+  "insight": "Aperçu : la croissance des 7 derniers jours est de <b>{growth}</b> par rapport aux 7 jours précédents. Chaque utilisateur actif envoie en moyenne <b>{mpu}</b> messages par jour."
+},
+
+
 
   "reports": {
     "none_chats": "🧾 Rapports\nAucun chat lié pour l’instant.",
@@ -218,7 +263,7 @@
   "list_title": "📜 Toutes les offres",
   "list_none": "Aucune offre trouvée. Utilisez les boutons ci-dessous pour créer les offres par défaut ou une nouvelle offre.",
   "plan_row": "{code} — {price}⭐ ({active})",
-
+   "custom_set_ok": "✅ L’offre {code} a été mise à jour à {price}⭐.",
   "view_block": "<b>{title}</b> ({code})\n{desc}\n\nDurée : {days} jours\nPrix : {price}⭐\nStatut : {status}",
   "view_status_active": "Active",
   "view_status_inactive": "Inactive",
@@ -238,6 +283,9 @@
   "send_custom_prompt": "Envoyez un nouveau prix en Stars pour l’offre <b>{code}</b>.",
   "send_custom_invalid": "Veuillez envoyer un entier positif valide.",
 
+
+  "set_free_btn": "💸 Rendre gratuit (0⭐)",
+    "free_set_ok": "✅ L’offre {code} est maintenant gratuite (0⭐) pour tout le monde.",
   "create_ask_code": "Envoyez un code d’offre (ex. PRO_MONTH_PLUS). Utilisez uniquement lettres, chiffres et underscores, sans espace.",
   "create_invalid_code": "Code invalide. Utilisez seulement lettres, chiffres et underscores, sans espace.",
   "create_ask_title": "Envoyez un titre lisible pour l’offre <b>{code}</b>.",
@@ -311,40 +359,44 @@
     "linked_channel": "Le canal <b>{title}</b> est maintenant lié à votre espace de travail ✅"
   },
 
+  "auto_link": {
+  "failed_dm": "⚠️ Je n’ai pas pu lier ce salon à votre tableau de bord. Essayez la commande /link dans le groupe ou contactez le support."
+},
+
   "gt": {
-    "title": "📎 <b>Outils de groupe</b>",
-    "pro_gate": "Les outils de groupe sont une fonctionnalité <b>Pro</b>. Passez à l’offre Pro pour les débloquer.",
-    "none_chats": "Aucun groupe lié pour l’instant.\nLiez d’abord un groupe, puis revenez ici.",
-    "pick_group": "Choisissez un groupe pour configurer le force-join :",
-    "buttons": {
-      "back": "⬅️ Retour",
-      "add": "➕ Ajouter un canal requis",
-      "list": "📋 Voir les canaux requis",
-      "clear": "🗑 Tout effacer",
-      "how": "ℹ️ Fonctionnement",
-      "cancel": "✖️ Annuler"
-    },
-    "errors": {
-      "pro_only": "Les outils de groupe sont disponibles uniquement avec l’offre Pro.",
-      "admin_only": "Seuls les admins du groupe peuvent gérer le force-join.",
-      "need_valid": "Envoyez un @canal valide, un ID -100… ou un lien t.me complet."
-    },
-    "menu_lead": "Configurez les canaux / groupes que les membres doivent rejoindre avant de pouvoir parler.",
-    "list": {
-      "none": "Aucun canal requis pour ce groupe pour l’instant.",
-      "title": "📋 Canaux / groupes requis :"
-    },
-    "clear": {
-      "ok": "Tous les canaux requis pour ce groupe ont été supprimés."
-    },
-    "how": {
-      "body": "Fonctionnement :\n\n1. Ajoutez un ou plusieurs canaux / groupes requis.\n2. Les nouveaux membres sont muets lorsqu’ils rejoignent le groupe.\n3. Ils reçoivent un DM avec les boutons pour rejoindre vos cibles.\n4. Une fois qu’ils ont rejoint, ils touchent « J’ai rejoint » pour être démutés."
-    },
-    "add": {
-      "prompt": "Envoyez un @nom d’utilisateur, un ID -100 ou un lien t.me à ajouter comme requis pour ce groupe.",
-      "added": "Ajouté : <b>{target}</b>\n\nVous pouvez en ajouter d’autres ou revenir au menu."
-    }
+  "title": "🔒 Adhésion forcée",
+  "pro_gate": "L’adhésion forcée est une fonctionnalité <b>Pro</b>. Passez en Pro pour l’activer dans vos groupes.",
+  "none_chats": "Aucun groupe lié pour l’instant.\nLiez d’abord un groupe, puis revenez ici.",
+  "pick_group": "Choisissez le groupe où vous voulez activer l’adhésion forcée :",
+  "buttons": {
+    "back": "⬅️ Retour",
+    "add": "➕ Configurer l’adhésion forcée",
+    "list": "📋 Voir les chaînes d’adhésion forcée",
+    "clear": "🗑 Réinitialiser l’adhésion forcée",
+    "how": "ℹ️ Comment ça marche",
+    "cancel": "✖️ Annuler"
   },
+  "errors": {
+    "pro_only": "L’adhésion forcée est réservée au plan Pro.",
+    "admin_only": "Seuls les administrateurs du groupe peuvent gérer l’adhésion forcée.",
+    "need_valid": "Envoyez un @channel valide, un ID -100… ou un lien t.me complet."
+  },
+  "menu_lead": "Configurez l’adhésion forcée : choisissez les chaînes que les membres doivent rejoindre avant de pouvoir parler.",
+  "list": {
+    "none": "Aucune chaîne d’adhésion forcée n’est encore configurée pour ce groupe.",
+    "title": "📋 Chaînes / groupes d’adhésion forcée :"
+  },
+  "clear": {
+    "ok": "L’adhésion forcée a été réinitialisée pour ce groupe."
+  },
+  "how": {
+    "body": "Fonctionnement de l’adhésion forcée :\n\n1) Vous ajoutez une ou plusieurs chaînes / groupes.\n2) Les nouveaux membres sont mis en sourdine lorsqu’ils rejoignent le groupe.\n3) Ils reçoivent un DM avec des boutons vers vos chaînes.\n4) Une fois qu’ils les ont rejointes et qu’ils appuient sur « I joined », le bot les réactive automatiquement."
+  },
+  "add": {
+    "prompt": "✏️ <b>Configurer l’adhésion forcée</b>\n\nEnvoyez le @username de la chaîne ou le lien d’invitation que vous voulez rendre obligatoire dans ce groupe.\n\nExemples :\n• @machaine\n• https://t.me/machaine\n\nVous pouvez ajouter plusieurs chaînes une par une.",
+    "added": "✅ Ajouté : <b>{target}</b>\n\nLes nouveaux membres de ce groupe devront maintenant rejoindre cette chaîne avant de pouvoir parler.\n\nEnvoyez une autre chaîne pour en ajouter d’autres, ou appuyez sur ⬅️ Retour dans le menu."
+  }
+},
 
   "group_tools": {
     "help": "Avec les outils de groupe vous pouvez :\n\n• Exiger que les utilisateurs rejoignent certains canaux avant de parler\n• Mettre automatiquement en sourdine les nouveaux membres jusqu’à ce qu’ils rejoignent\n• Suivre les arrivées et départs pour vos groupes\n\nOuvrez ceci dans un groupe lié pour configurer les règles.",
