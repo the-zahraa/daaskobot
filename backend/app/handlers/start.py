@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import logging
 from typing import Optional, cast, List, Tuple, Dict, Any
+import asyncio
 
 from aiogram import F, Bot, Router, BaseMiddleware
 from aiogram.filters import Command
@@ -18,6 +19,7 @@ from aiogram.types import (
 )
 
 from ..db import get_con
+from ..repositories.pending_verification import mark_verified_for_user
 from ..repositories.users import upsert_user, has_phone, get_language, set_language
 from ..repositories.tenants import ensure_personal_tenant, link_user_to_tenant, get_user_tenant
 from ..repositories.subscriptions import get_user_subscription_status
@@ -25,8 +27,15 @@ from ..repositories.chats import list_tenant_chats
 from ..repositories.stats import get_last_days
 from ..repositories.required import list_required_targets, list_group_targets
 from ..repositories.activity import (
-    get_messages_daily, get_dau_daily, get_top_talkers, get_peak_hour, get_most_active_user
+    get_messages_daily,
+    get_dau_daily,
+    get_top_talkers,
+    get_peak_hour,
+    get_most_active_user,
+    get_active_users_window,   # NEW
 )
+
+
 from ..services.i18n import t, remember_language
 
 logger = logging.getLogger(__name__)
@@ -66,24 +75,40 @@ async def _is_pro_user(user_id: int) -> bool:
     }
 
 # -------------- ACCESS POLICY --------------
-ALLOWED_PREFIXES = ["+888"]
+# -------------- ACCESS POLICY --------------
+
+
+
+ALLOWED_EU_MIN = 30   # inclusive
+ALLOWED_EU_MAX = 59   # inclusive
 
 def _is_allowed(phone: Optional[str]) -> bool:
+    """
+    Allow:
+      • EU (+30..+59)
+      • +888 anonymous numbers
+    Block everything else (including +98 Iran).
+    """
     if not phone:
         return False
+
     phone = phone.strip()
-    for p in ALLOWED_PREFIXES:
-        if phone.startswith(p):
-            return True
-    if phone.startswith("+7"):
-        return False
+
+    # Always allow +888 (anonymous Telegram numbers)
+    if phone.startswith("+888"):
+        return True
+
+    # EU-only window (+30..+59)
     if phone.startswith("+") and len(phone) >= 3 and phone[1:3].isdigit():
         try:
-            two = int(phone[1:3])
-            return 30 <= two <= 59
-        except Exception:
+            cc = int(phone[1:3])
+        except ValueError:
             return False
+        return ALLOWED_EU_MIN <= cc <= ALLOWED_EU_MAX
+
     return False
+
+
 
 # ---------------- UI ----------------
 def owner_home_kb(user_id: int) -> InlineKeyboardMarkup:
@@ -325,6 +350,19 @@ async def _clear_reply_keyboard(bot: Bot, chat_id: int):
         await bot.send_message(chat_id, " ", reply_markup=ReplyKeyboardRemove())
     except Exception:
         pass
+    
+async def _delete_message_later(bot: Bot, chat_id: int, message_id: int, delay: int = 120) -> None:
+    """
+    Delete a message after 'delay' seconds.
+    Used so verification / welcome messages fade automatically.
+    """
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        # not critical if it fails (e.g. already deleted)
+        pass
+
 
 # ---------------- Middleware ----------------
 class PrivateForceJoinGuard(BaseMiddleware):
@@ -438,6 +476,70 @@ async def render_settings(cb_or_msg, user_id: int):
 # ---------------- Register ----------------
 @router.message(Command("start"))
 async def start_cmd(msg: Message):
+    bot = cast(Bot, msg.bot)
+    if not msg.from_user:
+        return
+
+    u = msg.from_user
+
+    # -------- Deep-link payload handling (verify_<user_id>) --------
+    text = (msg.text or "").strip()
+    payload = ""
+    if text.startswith("/start"):
+        parts = text.split(maxsplit=1)
+        if len(parts) == 2:
+            # e.g. "/start verify_5044723871"
+            payload = parts[1].split()[0].strip()
+
+    if payload.startswith("verify_"):
+        # Extract user id from payload
+        target_id = None
+        try:
+            target_id = int(payload.split("_", 1)[1])
+        except Exception:
+            target_id = None
+
+        if target_id is not None and target_id != u.id:
+            # Someone else clicked another user's link -> sassy reply and stop
+            await bot.send_message(
+                msg.chat.id,
+                "😏 This verification link isn’t for you.",
+            )
+            return
+        # If target_id == u.id, continue as normal (ask for phone, etc.)
+
+    await _clear_reply_keyboard(bot, msg.chat.id)
+
+    if _is_owner(msg.from_user.id):
+        await bot.send_message(
+            msg.chat.id,
+            t("start.owner_welcome", user_id=msg.from_user.id),
+            reply_markup=owner_home_kb(msg.from_user.id)
+        )
+        return
+
+    if not await has_phone(msg.from_user.id):
+        await bot.send_message(
+            msg.chat.id,
+            t("request_phone.prompt", user_id=msg.from_user.id),
+            reply_markup=request_phone_kb(msg.from_user.id)
+        )
+        return
+
+    await _ensure_user_and_tenant(msg)
+
+    try:
+        lang = await get_language(msg.from_user.id)
+        if lang:
+            remember_language(msg.from_user.id, lang)
+    except Exception:
+        pass
+
+    if not await _enforce_global_requirements(bot, msg.from_user.id):
+        return
+
+    await _render_dashboard(bot, msg.chat.id, msg.from_user.id)
+
     bot = cast(Bot, msg.bot)
     if not msg.from_user:
         return
@@ -591,9 +693,14 @@ async def contact_shared(msg: Message):
     raw = msg.contact.phone_number or ""
     phone_e164 = raw if raw.startswith("+") else f"+{raw}" if raw else None
 
+    # Geofence: only EU +30..+59 and +888 (anon). Everything else (incl. +98) is blocked.
     if not _is_allowed(phone_e164):
         try:
-            await bot.send_message(msg.chat.id, t("access.denied_geofence", user_id=msg.from_user.id), reply_markup=ReplyKeyboardRemove())
+            await bot.send_message(
+                msg.chat.id,
+                t("access.denied_geofence", user_id=msg.from_user.id),
+                reply_markup=ReplyKeyboardRemove(),
+            )
         except Exception:
             pass
         return
@@ -609,10 +716,122 @@ async def contact_shared(msg: Message):
         region=None,
         is_premium=bool(getattr(u, "is_premium", False)),
     )
+
+    # User has a valid stored phone -> mark as verified in pending_verifications
+    chat_ids = await mark_verified_for_user(u.id)
+
+    # For each chat where they were pending, unmute and send a welcome message
+    if chat_ids:
+        perms = ChatPermissions(
+            can_send_messages=True,
+            can_send_audios=True,
+            can_send_documents=True,
+            can_send_photos=True,
+            can_send_videos=True,
+            can_send_video_notes=True,
+            can_send_voice_notes=True,
+            can_send_polls=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True,
+        )
+        # Build a simple display name
+        first = (u.first_name or "").strip()
+        last = (u.last_name or "").strip()
+        username = (u.username or "").strip()
+        display_name = (first + " " + last).strip() or (f"@{username}" if username else "user")
+        mention = f'<a href="tg://user?id={u.id}">{display_name}</a>'
+
+        for cid in chat_ids:
+            try:
+                # Unmute
+                await bot.restrict_chat_member(cid, u.id, permissions=perms)
+            except Exception:
+                pass
+            try:
+                # Welcome message that auto-fades
+                welcome = await bot.send_message(
+                    cid,
+                    f"✅ {mention} is now verified and can talk here.",
+                )
+                asyncio.create_task(
+                    _delete_message_later(bot, cid, welcome.message_id, delay=120)
+                )
+            except Exception:
+                pass
+
     await _ensure_user_and_tenant(msg)
     if not await _enforce_global_requirements(bot, u.id):
         return
-    await bot.send_message(msg.chat.id, t("contact.thanks_in", user_id=u.id), reply_markup=ReplyKeyboardRemove())
+
+    await bot.send_message(
+        msg.chat.id,
+        t("contact.thanks_in", user_id=u.id),
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    await _render_dashboard(bot, msg.chat.id, u.id)
+
+    bot = cast(Bot, msg.bot)
+    if not msg.from_user or not msg.contact:
+        return
+
+    raw = msg.contact.phone_number or ""
+    phone_e164 = raw if raw.startswith("+") else f"+{raw}" if raw else None
+
+    # Geofence: only +30..+59. Everything else (including +888) is blocked.
+    if not _is_allowed(phone_e164):
+        try:
+            await bot.send_message(
+                msg.chat.id,
+                t("access.denied_geofence", user_id=msg.from_user.id),
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        except Exception:
+            pass
+        return
+
+    u = msg.from_user
+    await upsert_user(
+        tg_id=u.id,
+        first_name=u.first_name,
+        last_name=u.last_name,
+        username=u.username,
+        language_code=u.language_code,
+        phone_e164=phone_e164,
+        region=None,
+        is_premium=bool(getattr(u, "is_premium", False)),
+    )
+
+        # User has a valid stored phone -> mark as verified in pending_verifications
+    chat_ids = await mark_verified_for_user(u.id)
+
+    # Unmute user in chats where verification was pending
+    for cid in chat_ids:
+        try:
+            perms = ChatPermissions(
+                can_send_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+            )
+            await bot.restrict_chat_member(cid, u.id, permissions=perms)
+        except Exception as e:
+            logger.warning("Failed to unrestrict verified user=%s in chat=%s: %s", u.id, cid, e)
+
+    await _ensure_user_and_tenant(msg)
+    if not await _enforce_global_requirements(bot, u.id):
+        return
+
+    await bot.send_message(
+        msg.chat.id,
+        t("contact.thanks_in", user_id=u.id),
+        reply_markup=ReplyKeyboardRemove(),
+    )
     await _render_dashboard(bot, msg.chat.id, u.id)
 
 @router.callback_query(F.data == "tenant_overview")
@@ -671,13 +890,9 @@ async def tenant_analytics_cb(cb: CallbackQuery):
 
 @router.callback_query(F.data.startswith("tenant_analytics_view:"))
 async def tenant_analytics_view(cb: CallbackQuery):
-    """
-    Analytics screen with extra KPIs + insight sentence.
-    """
     if not cb.from_user:
         await cb.answer()
         return
-
     if not _is_owner(cb.from_user.id):
         if not await _enforce_global_requirements(cast(Bot, cb.bot), cb.from_user.id):
             return
@@ -686,85 +901,52 @@ async def tenant_analytics_view(cb: CallbackQuery):
     chat_id = int(parts[1]) if len(parts) >= 2 else 0
 
     rows = await get_last_days(chat_id, 30)
-    lines: list[str] = [t("analytics.title_30d", user_id=cb.from_user.id)]
+    lines = [t("analytics.title_30d", user_id=cb.from_user.id)]
 
     total_joins = sum(j for _, j, _ in rows)
     total_leaves = sum(l for _, _, l in rows)
-    net_growth = total_joins - total_leaves
-
     lines.append(t("analytics.total_joins", user_id=cb.from_user.id, n=total_joins))
     lines.append(t("analytics.total_leaves", user_id=cb.from_user.id, n=total_leaves))
-    lines.append(t("analytics.net_growth_30d", user_id=cb.from_user.id, n=net_growth))
 
     if await _is_pro_user(cb.from_user.id):
+        # Existing KPIs
         msgs_7d = await get_messages_daily(chat_id, 7)
         dau_7d  = await get_dau_daily(chat_id, 7)
-        peak    = await get_peak_hour(chat_id, days=30, tz="Europe/Helsinki")
+        peak    = await get_peak_hour(chat_id, days=30, tz='Europe/Helsinki')
         top1    = await get_most_active_user(chat_id, days=30)
 
-        total_msgs_7d = 0
         if msgs_7d:
             total_msgs_7d = sum(int(c) for _, c in msgs_7d)
             lines.append(t("analytics.messages_7d", user_id=cb.from_user.id, n=total_msgs_7d))
+        else:
+            total_msgs_7d = 0
 
-        avg_dau_7d = 0.0
         if dau_7d:
-            avg_dau_7d = round(
-                sum(int(c) for _, c in dau_7d) / max(len(dau_7d), 1),
-                1,
-            )
-            lines.append(t("analytics.avg_dau_7d", user_id=cb.from_user.id, avg=avg_dau_7d))
+            avg_dau = round(sum(int(c) for _, c in dau_7d) / max(len(dau_7d), 1), 1)
+            lines.append(t("analytics.avg_dau_7d", user_id=cb.from_user.id, avg=avg_dau))
 
         if peak:
             hour_str = f"{peak[0]:02d}"
-            lines.append(
-                t(
-                    "analytics.peak_hour",
-                    user_id=cb.from_user.id,
-                    hour=hour_str,
-                    count=peak[1],
-                )
-            )
+            lines.append(t("analytics.peak_hour", user_id=cb.from_user.id, hour=hour_str, count=peak[1]))
 
         if top1:
-            lines.append(
-                t(
-                    "analytics.top_user_30d",
-                    user_id=cb.from_user.id,
-                    user=top1[0],
-                    count=top1[1],
-                )
-            )
+            lines.append(t("analytics.top_user_30d", user_id=cb.from_user.id, user=top1[0], count=top1[1]))
 
-        # ---------- NEW: Insight sentence ----------
-        recent7 = rows[:7]
-        prev7 = rows[7:14]
+        # NEW: last-active 7 / 30 / 90 days
+        active_7  = await get_active_users_window(chat_id, 7)
+        active_30 = await get_active_users_window(chat_id, 30)
+        active_90 = await get_active_users_window(chat_id, 90)
 
-        joins_7 = sum(j for _, j, _ in recent7)
-        joins_prev7 = sum(j for _, j, _ in prev7) if prev7 else 0
+        lines.append(t("analytics.active_7", user_id=cb.from_user.id, n=active_7))
+        lines.append(t("analytics.active_30", user_id=cb.from_user.id, n=active_30))
+        lines.append(t("analytics.active_90", user_id=cb.from_user.id, n=active_90))
 
-        if joins_prev7 <= 0 and joins_7 <= 0:
-            growth_str = "0%"
-        elif joins_prev7 <= 0 and joins_7 > 0:
-            growth_str = "+100%"
-        else:
-            change = (joins_7 - joins_prev7) / max(joins_prev7, 1e-9) * 100.0
-            growth_str = f"{change:+.0f}%"
-
-        total_dau_days = sum(int(c) for _, c in dau_7d) if dau_7d else 0
-        if total_dau_days > 0 and total_msgs_7d > 0:
-            msgs_per_active = total_msgs_7d / total_dau_days
-        else:
-            msgs_per_active = 0.0
-
-        lines.append(
-            t(
-                "analytics.insight",
-                user_id=cb.from_user.id,
-                growth=growth_str,
-                mpu=f"{msgs_per_active:.1f}",
-            )
-        )
+        # NEW: simple insight – average messages per active user per day over last 30 days
+        msgs_30d = await get_messages_daily(chat_id, 30)
+        total_msgs_30d = sum(int(c) for _, c in msgs_30d) if msgs_30d else 0
+        if active_30 > 0 and total_msgs_30d > 0:
+            avg_per_active_per_day = round(total_msgs_30d / (active_30 * 30), 1)
+            lines.append(t("analytics.insight_avg_msgs", user_id=cb.from_user.id, avg=avg_per_active_per_day))
     else:
         lines.append(t("analytics.pro_required_note", user_id=cb.from_user.id))
 

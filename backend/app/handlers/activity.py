@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+import time
+from collections import defaultdict
 
 from aiogram import F
 from aiogram.types import Message, ChatPermissions
@@ -15,6 +17,12 @@ from ..services.i18n import t  # i18n
 
 log = logging.getLogger("app.handlers.activity")
 UTC = timezone.utc
+
+# ---------------- Simple anti-spam ----------------
+
+# (chat_id, user_id) -> [timestamps]
+_msg_history = defaultdict(list)
+MAX_MSG_PER_10S = 8
 
 
 def _has_content(msg: Message) -> bool:
@@ -52,7 +60,7 @@ async def _is_group_admin(msg: Message) -> bool:
         return False
 
 
-# backend/app/handlers/activity.py  (only this function changed)
+# backend/app/handlers/activity.py  (only this function changed before; kept)
 async def _enforce_group_gate_if_needed(msg: Message) -> bool:
     """
     Returns True if user is allowed to speak, False if they were gated (muted + DM sent).
@@ -133,7 +141,6 @@ async def _enforce_group_gate_if_needed(msg: Message) -> bool:
     return False
 
 
-
 def register(dp):
     async def on_group_message(msg: Message):
         # Only groups/supergroups, ignore bot messages
@@ -146,6 +153,37 @@ def register(dp):
         allowed = await _enforce_group_gate_if_needed(msg)
         if not allowed:
             return  # do not count gated message
+
+        # 🔒 Anti-spam: simple flood control (groups only)
+        if msg.from_user and not msg.from_user.is_bot:
+            user_id_for_spam = msg.from_user.id
+            key = (msg.chat.id, user_id_for_spam)
+            now = time.monotonic()
+            history = _msg_history[key]
+            history.append(now)
+            cutoff = now - 10
+            history = [t for t in history if t >= cutoff]
+            _msg_history[key] = history
+
+            if len(history) > MAX_MSG_PER_10S:
+                perms = ChatPermissions(
+                    can_send_messages=False,
+                    can_send_audios=False,
+                    can_send_documents=False,
+                    can_send_photos=False,
+                    can_send_videos=False,
+                    can_send_video_notes=False,
+                    can_send_voice_notes=False,
+                    can_send_polls=False,
+                    can_send_other_messages=False,
+                    can_add_web_page_previews=False,
+                )
+                try:
+                    await msg.bot.restrict_chat_member(msg.chat.id, user_id_for_spam, permissions=perms)
+                    await msg.answer("🚫 Anti-spam: you are muted for flooding.")
+                except Exception:
+                    pass
+                return  # don't count spam message
 
         # user_id is optional (people can "send as channel" => no from_user)
         user_id = None

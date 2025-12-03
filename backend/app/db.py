@@ -61,3 +61,13 @@ class ConnectionContext:
 
 def get_con() -> ConnectionContext:
     return ConnectionContext()
+
+async def close_db() -> None:
+    """
+    Compatibility stub for bot_worker.
+
+    If you later add a real DB pool (e.g. asyncpg pool),
+    you can close it here. For now it just exists so
+    bot_worker and Pylint are happy.
+    """
+    return

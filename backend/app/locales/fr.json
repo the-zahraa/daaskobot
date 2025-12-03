@@ -429,5 +429,53 @@
       "fr": "Français"
     },
     "saved": "Langue changée pour <b>{lang_name}</b>."
+  },
+
+  
+  "massdm": {
+    "home": "📣 <b>Mass DM</b>\\nEnvoyez un message à toute votre audience (membres de vos groupes et chaînes liés).\\n\\nSeuls les utilisateurs qui ont <b>ouvert le bot en privé au moins une fois</b> peuvent recevoir des messages. Les autres apparaîtront comme <b>échoués</b> dans le récapitulatif.",
+    "buttons": {
+      "audience": "👥 Audience & filtres",
+      "send": "📤 Envoyer un message",
+      "back": "⬅️ Retour",
+      "back_simple": "⬅️ Retour"
+    },
+    "filter": {
+      "has_phone_any": "Téléphone : Tous",
+      "has_phone_yes": "Téléphone : Oui",
+      "has_phone_no": "Téléphone : Non",
+      "last_active_7": "Actifs : 7 derniers jours",
+      "last_active_30": "Actifs : 30 derniers jours",
+      "last_active_90": "Actifs : 90 derniers jours"
+    },
+    "filters": {
+      "hp_any_label": "Tous (avec ou sans téléphone)",
+      "hp_yes_label": "Uniquement les utilisateurs avec téléphone",
+      "hp_no_label": "Uniquement les utilisateurs sans téléphone"
+    },
+    "aud": {
+      "title": "👥 <b>Audience & filtres</b>",
+      "matched": "Actuellement : <b>{total}</b> utilisateurs correspondent.",
+      "filters": "• Filtre téléphone : <b>{hp}</b>\\n• Dernière activité : <b>sur les {days} derniers jours</b>",
+      "explain": "L’audience = les utilisateurs distincts membres de vos groupes/chaînes liés et actifs sur cette période.",
+      "note": "Seuls les utilisateurs qui ont déjà ouvert le bot en privé peuvent réellement recevoir des DM. Les autres seront comptés comme <b>échoués</b> lors de l’envoi."
+    },
+    "compose": {
+      "prompt": "✏️ Envoyez le texte du message à diffuser.\\nUtilisez /cancel pour arrêter.\\n\\nRemarque : seuls les utilisateurs qui ont déjà ouvert le bot en privé peuvent recevoir des DM.",
+      "cancelled": "Annulé."
+    },
+    "send": {
+      "no_text": "Veuillez envoyer du texte.",
+      "no_audience": "Aucun utilisateur ne correspond encore à vos filtres.",
+      "estimate": "Livraison estimée : ~{n} utilisateurs.\\nTelegram ne livrera qu’aux utilisateurs qui ont déjà ouvert le bot en privé.",
+      "result": "Terminé ✅  Envoyés : {sent}, Échoués : {failed}"
+    }
+  },
+  "analytics": {
+    "active_7": "Utilisateurs actifs sur les 7 derniers jours : {n}",
+    "active_30": "Utilisateurs actifs sur les 30 derniers jours : {n}",
+    "active_90": "Utilisateurs actifs sur les 90 derniers jours : {n}",
+    "insight_avg_msgs": "En moyenne, chaque utilisateur actif envoie <b>{avg}</b> messages par jour (sur les 30 derniers jours)."
   }
 }
+

@@ -178,3 +178,20 @@ async def get_peak_hour(chat_id: int, *, days: int = 30, tz: str = 'UTC') -> Opt
     if not row:
         return None
     return int(row["hour"]), int(row["cnt"])
+
+async def get_active_users_window(chat_id: int, days: int = 30) -> int:
+    """
+    Distinct users active in the last `days` days,
+    using dau_daily(chat_id, date, user_id).
+    """
+    async with get_con() as con:
+        row = await con.fetchrow(
+            """
+            SELECT COUNT(DISTINCT user_id) AS c
+            FROM dau_daily
+            WHERE chat_id = $1
+              AND date >= current_date - ($2::int - 1)
+            """,
+            chat_id, days
+        )
+    return int(row["c"]) if row and row["c"] is not None else 0

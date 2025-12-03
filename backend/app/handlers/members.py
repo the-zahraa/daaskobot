@@ -4,9 +4,17 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone, date, timedelta
 from typing import Optional, Set
+import asyncio
+import time
 
 from aiogram import F
-from aiogram.types import ChatMemberUpdated, Message, ChatPermissions
+from aiogram.types import (
+    ChatMemberUpdated,
+    Message,
+    ChatPermissions,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.enums.chat_type import ChatType
 
 from app.db import get_con
@@ -17,6 +25,9 @@ from app.repositories.stats import (
     upsert_chat_user_index,
 )
 from app.repositories.required import list_group_targets
+from app.repositories.users import has_phone
+from app.repositories.pending_verification import add_pending_verification, should_ban
+
 from app.handlers.start import _is_member, force_join_kb_group
 from app.services.i18n import t  # i18n
 
@@ -25,6 +36,227 @@ UTC = timezone.utc
 
 # Chats where we know Telegram sends real ChatMemberUpdated JOIN/LEAVE
 _CHATS_WITH_REAL_CM: Set[int] = set()
+
+# ---------------- Raid detection (join floods) ----------------
+
+JOIN_WINDOW_SECONDS = 30
+RAID_THRESHOLD = 30              # joins per JOIN_WINDOW_SECONDS
+RAID_DURATION_SECONDS = 5 * 60   # raid mode lasts 5 minutes
+
+# chat_id -> list[join_timestamps]
+_JOIN_HISTORY: dict[int, list[float]] = {}
+# chat_id -> raid_mode_until (monotonic time)
+_RAID_MODE_UNTIL: dict[int, float] = {}
+
+
+def _is_in_raid_mode(chat_id: int) -> bool:
+    now = time.monotonic()
+    until = _RAID_MODE_UNTIL.get(chat_id, 0.0)
+    return now < until
+
+
+def _record_join_and_check_raid(chat_id: int) -> bool:
+    """
+    Record a join timestamp for this chat and decide if raid mode is active.
+    """
+    now = time.monotonic()
+    history = _JOIN_HISTORY.get(chat_id, [])
+    history.append(now)
+    cutoff = now - JOIN_WINDOW_SECONDS
+    history = [t for t in history if t >= cutoff]
+    _JOIN_HISTORY[chat_id] = history
+
+    # trigger raid mode if threshold exceeded
+    if len(history) >= RAID_THRESHOLD:
+        _RAID_MODE_UNTIL[chat_id] = now + RAID_DURATION_SECONDS
+        return True
+
+    return _is_in_raid_mode(chat_id)
+
+
+async def _delete_message_later(bot, chat_id: int, message_id: int, delay: int = 120) -> None:
+    """
+    Delete a message after 'delay' seconds.
+    Used to auto-remove verification prompts from the group.
+    """
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id, message_id)
+    except Exception:
+        pass
+
+
+async def _ban_if_not_verified_later(bot, chat_id: int, user_id: int, delay: int = 120) -> None:
+    """
+    After 'delay' seconds, if user is still unverified for this chat, ban them.
+    """
+    await asyncio.sleep(delay)
+    try:
+        if await should_ban(chat_id, user_id):
+            try:
+                await bot.ban_chat_member(chat_id, user_id)
+                log.info(
+                    "verify-gate: banned user=%s from chat=%s (not verified in time)",
+                    user_id,
+                    chat_id,
+                )
+            except Exception as e:
+                log.warning(
+                    "verify-gate: ban_chat_member failed chat=%s user=%s err=%s",
+                    chat_id,
+                    user_id,
+                    e,
+                )
+    except Exception as e:
+        log.warning(
+            "verify-gate: should_ban check failed chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
+
+
+async def _maybe_require_phone_verification(
+    chat_id: int,
+    user_id: int,
+    joined_user,
+    chat_title: str,
+    bot,
+) -> None:
+    """
+    Enforce verification by muting, showing ONE group message with a personal button,
+    and banning later if they don't verify.
+    """
+    # Ignore bots
+    if joined_user and getattr(joined_user, "is_bot", False):
+        return
+
+    # Already verified -> do nothing
+    try:
+        if await has_phone(user_id):
+            return
+    except Exception as e:
+        log.warning(
+            "verify-gate: has_phone failed chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
+
+    # Raid mode: instant ban
+    in_raid = _record_join_and_check_raid(chat_id)
+    if in_raid:
+        try:
+            await bot.ban_chat_member(chat_id, user_id)
+            log.info("verify-gate: raid-mode ban chat=%s user=%s", chat_id, user_id)
+        except Exception as e:
+            log.warning(
+                "verify-gate: raid-mode ban failed chat=%s user=%s err=%s",
+                chat_id,
+                user_id,
+                e,
+            )
+        return
+
+    # Mute immediately (block messaging)
+    try:
+        perms = ChatPermissions(
+            can_send_messages=False,
+            can_send_audios=False,
+            can_send_documents=False,
+            can_send_photos=False,
+            can_send_videos=False,
+            can_send_video_notes=False,
+            can_send_voice_notes=False,
+            can_send_polls=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False,
+        )
+        await bot.restrict_chat_member(chat_id, user_id, permissions=perms)
+    except Exception as e:
+        log.warning(
+            "verify-gate: restrict failed chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
+
+    # Add pending verification (2 minutes)
+    await add_pending_verification(chat_id, user_id, ttl_seconds=120)
+
+    # Get bot username for deep link
+    bot_username = None
+    try:
+        me = await bot.get_me()
+        bot_username = me.username
+    except Exception as e:
+        log.info(
+            "verify-gate: get_me failed chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
+
+    # Build a nice personal mention with real name
+    if joined_user:
+        first = (joined_user.first_name or "").strip()
+        last = (joined_user.last_name or "").strip()
+        username = (joined_user.username or "").strip()
+        display_name = (first + " " + last).strip() or (f"@{username}" if username else "user")
+    else:
+        display_name = "user"
+
+    mention = f'<a href="tg://user?id={user_id}">{display_name}</a>'
+
+    # Group message with ONE personal button
+    # Group message with ONE personal button
+    try:
+        text_lines = [
+            f"👋 Welcome {mention}!",
+            f"To talk in <b>{chat_title or 'this chat'}</b>, you must verify your phone number.",
+            "",
+            "⏳ You have <b>2 minutes</b> to verify, otherwise you will be removed automatically.",
+            "",
+            "Tap the button below:",
+        ]
+        text = "\n".join(text_lines)
+
+        kb = None
+        if bot_username:
+            payload = f"verify_{user_id}"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔐 Verify Now",
+                            url=f"https://t.me/{bot_username}?start={payload}",
+                        )
+                    ]
+                ]
+            )
+
+        verify_msg = await bot.send_message(
+            chat_id,
+            text,
+            reply_markup=kb,
+            disable_web_page_preview=True,
+        )
+
+        # Auto-delete the verification prompt after ~2 minutes
+        asyncio.create_task(
+            _delete_message_later(bot, chat_id, verify_msg.message_id, delay=130)
+        )
+    except Exception as e:
+        log.info(
+            "verify-gate: group msg with button failed chat=%s user=%s err=%s",
+            chat_id,
+            user_id,
+            e,
+        )
+
+
+    # Schedule ban after 2 minutes if still not verified
+    asyncio.create_task(_ban_if_not_verified_later(bot, chat_id, user_id, delay=120))
 
 
 def _now() -> datetime:
@@ -56,9 +288,6 @@ async def _recent_member_event_exists(
     """
     Check if we already recorded the same kind of event (join/leave)
     for this chat + user in the last `window_seconds`.
-
-    This protects us from any double ChatMemberUpdated / service-message
-    combo that might happen in channels or weird Telegram edge cases.
     """
     since = _now() - timedelta(seconds=window_seconds)
     async with get_con() as con:
@@ -314,6 +543,16 @@ async def on_member_update(upd: ChatMemberUpdated) -> None:
 
         await _handle_join(chat_id, user_id, invite_url)
 
+        # Phone verification gate (groups + supergroups + channels)
+        chat_title = getattr(upd.chat, "title", "this chat")
+        await _maybe_require_phone_verification(
+            chat_id=chat_id,
+            user_id=user_id,
+            joined_user=joined_user,
+            chat_title=chat_title,
+            bot=upd.bot,
+        )
+
         # Force-join applies only to groups / supergroups
         try:
             if upd.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
@@ -323,8 +562,8 @@ async def on_member_update(upd: ChatMemberUpdated) -> None:
         except Exception:
             targets = []
 
-        if targets and not (joined_user and joined_user.is_bot):
-            # Mute
+        if targets:
+            # Mute again (harmless if already muted)
             try:
                 perms = ChatPermissions(
                     can_send_messages=False,
@@ -341,7 +580,8 @@ async def on_member_update(upd: ChatMemberUpdated) -> None:
                 await upd.bot.restrict_chat_member(chat_id, user_id, permissions=perms)
             except Exception:
                 pass
-            # DM
+
+            # DM with force-join buttons
             try:
                 await upd.bot.send_message(
                     user_id,
@@ -354,6 +594,7 @@ async def on_member_update(upd: ChatMemberUpdated) -> None:
                 )
             except Exception:
                 pass
+
         return
 
     # LEAVE
@@ -390,6 +631,15 @@ def register(dp) -> None:
 
             await _handle_join(msg.chat.id, u.id, invite_link_url=None)
 
+            # Phone verification gate for fallback joins
+            await _maybe_require_phone_verification(
+                chat_id=msg.chat.id,
+                user_id=u.id,
+                joined_user=u,
+                chat_title=(msg.chat.title or "this chat"),
+                bot=msg.bot,
+            )
+
             # Force-join only for groups with targets
             try:
                 targets = await list_group_targets(msg.chat.id)
@@ -412,7 +662,9 @@ def register(dp) -> None:
                         can_add_web_page_previews=False,
                     )
                     await msg.bot.restrict_chat_member(
-                        msg.chat.id, u.id, permissions=perms
+                        msg.chat.id,
+                        u.id,
+                        permissions=perms,
                     )
                 except Exception:
                     pass

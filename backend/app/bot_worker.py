@@ -66,7 +66,8 @@ async def run_polling() -> None:
         "app.handlers.broadcast",
         "app.handlers.campaigns",
         "app.handlers.chat_link",
-        "app.handlers.auto_link",       # <<< NEW: auto-link when bot becomes admin
+        "app.handlers.auto_link", # <<< NEW: auto-link when bot becomes admin
+        "app.handlers.mass_dm",
         "app.handlers.activity",
     ]
     for name in modules:
