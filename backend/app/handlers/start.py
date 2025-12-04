@@ -540,41 +540,6 @@ async def start_cmd(msg: Message):
 
     await _render_dashboard(bot, msg.chat.id, msg.from_user.id)
 
-    bot = cast(Bot, msg.bot)
-    if not msg.from_user:
-        return
-
-    await _clear_reply_keyboard(bot, msg.chat.id)
-
-    if _is_owner(msg.from_user.id):
-        await bot.send_message(
-            msg.chat.id,
-            t("start.owner_welcome", user_id=msg.from_user.id),
-            reply_markup=owner_home_kb(msg.from_user.id)
-        )
-        return
-
-    if not await has_phone(msg.from_user.id):
-        await bot.send_message(
-            msg.chat.id,
-            t("request_phone.prompt", user_id=msg.from_user.id),
-            reply_markup=request_phone_kb(msg.from_user.id)
-        )
-        return
-
-    await _ensure_user_and_tenant(msg)
-
-    try:
-        lang = await get_language(msg.from_user.id)
-        if lang:
-            remember_language(msg.from_user.id, lang)
-    except Exception:
-        pass
-
-    if not await _enforce_global_requirements(bot, msg.from_user.id):
-        return
-
-    await _render_dashboard(bot, msg.chat.id, msg.from_user.id)
 
 @router.callback_query(F.data == "owner_dashboard")
 async def owner_dashboard(cb: CallbackQuery):
@@ -770,70 +735,7 @@ async def contact_shared(msg: Message):
     )
     await _render_dashboard(bot, msg.chat.id, u.id)
 
-    bot = cast(Bot, msg.bot)
-    if not msg.from_user or not msg.contact:
-        return
-
-    raw = msg.contact.phone_number or ""
-    phone_e164 = raw if raw.startswith("+") else f"+{raw}" if raw else None
-
-    # Geofence: only +30..+59. Everything else (including +888) is blocked.
-    if not _is_allowed(phone_e164):
-        try:
-            await bot.send_message(
-                msg.chat.id,
-                t("access.denied_geofence", user_id=msg.from_user.id),
-                reply_markup=ReplyKeyboardRemove(),
-            )
-        except Exception:
-            pass
-        return
-
-    u = msg.from_user
-    await upsert_user(
-        tg_id=u.id,
-        first_name=u.first_name,
-        last_name=u.last_name,
-        username=u.username,
-        language_code=u.language_code,
-        phone_e164=phone_e164,
-        region=None,
-        is_premium=bool(getattr(u, "is_premium", False)),
-    )
-
-        # User has a valid stored phone -> mark as verified in pending_verifications
-    chat_ids = await mark_verified_for_user(u.id)
-
-    # Unmute user in chats where verification was pending
-    for cid in chat_ids:
-        try:
-            perms = ChatPermissions(
-                can_send_messages=True,
-                can_send_audios=True,
-                can_send_documents=True,
-                can_send_photos=True,
-                can_send_videos=True,
-                can_send_video_notes=True,
-                can_send_voice_notes=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
-            )
-            await bot.restrict_chat_member(cid, u.id, permissions=perms)
-        except Exception as e:
-            logger.warning("Failed to unrestrict verified user=%s in chat=%s: %s", u.id, cid, e)
-
-    await _ensure_user_and_tenant(msg)
-    if not await _enforce_global_requirements(bot, u.id):
-        return
-
-    await bot.send_message(
-        msg.chat.id,
-        t("contact.thanks_in", user_id=u.id),
-        reply_markup=ReplyKeyboardRemove(),
-    )
-    await _render_dashboard(bot, msg.chat.id, u.id)
-
+    
 @router.callback_query(F.data == "tenant_overview")
 async def tenant_overview(cb: CallbackQuery):
     if not cb.from_user:
