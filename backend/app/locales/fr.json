@@ -117,7 +117,7 @@
     "no_tenant": "Aucun espace de travail trouvé pour l’instant. Démarrez le bot en privé et liez un chat d’abord."
   },
 
-   "analytics": {
+"analytics": {
   "none_chats": "📈 Statistiques\nAucun salon lié pour l’instant.",
   "select_chat": "Choisissez un salon pour voir les statistiques :",
   "title_30d": "📈 <b>Statistiques (30 derniers jours)</b>",
@@ -131,8 +131,14 @@
   "pro_required_note": "⭐️ Les messages, l’activité quotidienne, l’heure de pointe et les top utilisateurs sont des fonctions <b>Pro</b>. Utilisez /pro pour passer à Pro.",
   "last7_header": "\n7 derniers jours (arrivées / départs) :",
   "day_line": "{date} : +{joins} / -{leaves}",
-  "insight": "Aperçu : la croissance des 7 derniers jours est de <b>{growth}</b> par rapport aux 7 jours précédents. Chaque utilisateur actif envoie en moyenne <b>{mpu}</b> messages par jour."
+  "insight": "Aperçu : la croissance des 7 derniers jours est de <b>{growth}</b> par rapport aux 7 jours précédents. Chaque utilisateur actif envoie en moyenne <b>{mpu}</b> messages par jour.",
+
+  "active_7": "Utilisateurs actifs sur les 7 derniers jours : {n}",
+  "active_30": "Utilisateurs actifs sur les 30 derniers jours : {n}",
+  "active_90": "Utilisateurs actifs sur les 90 derniers jours : {n}",
+  "insight_avg_msgs": "En moyenne, chaque utilisateur actif envoie <b>{avg}</b> messages par jour (sur les 30 derniers jours)."
 },
+
 
 
 
@@ -470,12 +476,6 @@
       "estimate": "Livraison estimée : ~{n} utilisateurs.\\nTelegram ne livrera qu’aux utilisateurs qui ont déjà ouvert le bot en privé.",
       "result": "Terminé ✅  Envoyés : {sent}, Échoués : {failed}"
     }
-  },
-  "analytics": {
-    "active_7": "Utilisateurs actifs sur les 7 derniers jours : {n}",
-    "active_30": "Utilisateurs actifs sur les 30 derniers jours : {n}",
-    "active_90": "Utilisateurs actifs sur les 90 derniers jours : {n}",
-    "insight_avg_msgs": "En moyenne, chaque utilisateur actif envoie <b>{avg}</b> messages par jour (sur les 30 derniers jours)."
   }
 }
 

@@ -134,8 +134,14 @@
   "pro_required_note": "⭐️ Messages, DAU, peak hour and top users are <b>Pro</b> features. Use /pro to upgrade.",
   "last7_header": "\nLast 7 days (joins / leaves):",
   "day_line": "{date}: +{joins} / -{leaves}",
-  "insight": "Insight: growth over the last 7 days is <b>{growth}</b> vs the previous 7 days. Each active user sends about <b>{mpu}</b> messages per day on average."
+  "insight": "Insight: growth over the last 7 days is <b>{growth}</b> vs the previous 7 days. Each active user sends about <b>{mpu}</b> messages per day on average.",
+
+  "active_7": "Active users last 7 days: {n}",
+  "active_30": "Active users last 30 days: {n}",
+  "active_90": "Active users last 90 days: {n}",
+  "insight_avg_msgs": "On average, each active user sends <b>{avg}</b> messages per day (over the last 30 days)."
 }
+
 ,
 
 
@@ -480,12 +486,6 @@
       "estimate": "Expected delivery: ~{n} users.\\nTelegram will only deliver to users who have started the bot in private at least once.",
       "result": "Done ✅  Sent: {sent}, Failed: {failed}"
     }
-  },
-  "analytics": {
-    "active_7": "Active users last 7 days: {n}",
-    "active_30": "Active users last 30 days: {n}",
-    "active_90": "Active users last 90 days: {n}",
-    "insight_avg_msgs": "On average, each active user sends <b>{avg}</b> messages per day (over the last 30 days)."
   }
 }
 
