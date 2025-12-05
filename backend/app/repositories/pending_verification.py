@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import List, Tuple
 
@@ -8,14 +9,13 @@ from app.db import get_con
 async def add_pending_verification(chat_id: int, user_id: int, ttl_seconds: int = 120) -> None:
     """
     Create or update a pending verification record for (chat_id, user_id).
-    Stores deadline = NOW() + INTERVAL '<ttl> seconds'.
-    This avoids Postgres make_interval() bugs.
+    Stores deadline = NOW() + ttl_seconds * INTERVAL '1 second'.
     """
     async with get_con() as con:
         await con.execute(
             """
             INSERT INTO public.pending_verifications (chat_id, user_id, deadline, verified)
-            VALUES ($1, $2, NOW() + ($3 || ' seconds')::interval, FALSE)
+            VALUES ($1, $2, NOW() + $3 * INTERVAL '1 second', FALSE)
             ON CONFLICT (chat_id, user_id) DO UPDATE
             SET deadline = EXCLUDED.deadline,
                 verified = FALSE
@@ -27,10 +27,6 @@ async def add_pending_verification(chat_id: int, user_id: int, ttl_seconds: int 
 
 
 async def mark_verified_for_user(user_id: int) -> List[int]:
-    """
-    Mark all NON-expired pending verifications for this user as verified.
-    Returns list of chat_ids where the user just became verified.
-    """
     async with get_con() as con:
         rows = await con.fetch(
             """
@@ -47,12 +43,6 @@ async def mark_verified_for_user(user_id: int) -> List[int]:
 
 
 async def should_ban(chat_id: int, user_id: int) -> bool:
-    """
-    TRUE if:
-        - There exists a pending_verification row
-        - verified = FALSE
-        - deadline < NOW()
-    """
     async with get_con() as con:
         row = await con.fetchrow(
             """
@@ -72,15 +62,10 @@ async def should_ban(chat_id: int, user_id: int) -> bool:
     deadline = row["deadline"]
     if isinstance(deadline, datetime):
         return deadline < datetime.now(timezone.utc)
-
     return False
 
 
 async def get_expired_unverified(limit: int = 50) -> List[Tuple[int, int]]:
-    """
-    Optional helper for cron cleanup or manual inspection.
-    Returns chat_id, user_id of expired + unverified rows.
-    """
     async with get_con() as con:
         rows = await con.fetch(
             """
