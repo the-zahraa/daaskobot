@@ -14,6 +14,7 @@ from aiogram.types import (
     ChatPermissions,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ChatJoinRequest,  # ✅ NEW
 )
 from aiogram.enums.chat_type import ChatType
 
@@ -72,6 +73,44 @@ def _record_join_and_check_raid(chat_id: int) -> bool:
         return True
 
     return _is_in_raid_mode(chat_id)
+
+
+# ---------------- Raid detection for JOIN REQUESTS (private groups) ----------------
+# ✅ NEW: protects private groups that use "join requests" instead of open joins
+
+REQ_WINDOW_SECONDS = 30
+REQ_THRESHOLD = 30               # requests per REQ_WINDOW_SECONDS
+REQ_RAID_DURATION_SECONDS = 5 * 60  # 5 minutes
+
+# chat_id -> list[request_timestamps]
+_REQ_HISTORY: dict[int, list[float]] = {}
+# chat_id -> request-raid-mode-until (monotonic time)
+_REQ_RAID_UNTIL: dict[int, float] = {}
+
+
+def _req_is_in_raid_mode(chat_id: int) -> bool:
+    now = time.monotonic()
+    until = _REQ_RAID_UNTIL.get(chat_id, 0.0)
+    return now < until
+
+
+def _record_join_request_and_check_raid(chat_id: int) -> bool:
+    """
+    Record a join-request timestamp for this chat and decide if request-raid mode is active.
+    """
+    now = time.monotonic()
+    history = _REQ_HISTORY.get(chat_id, [])
+    history.append(now)
+    cutoff = now - REQ_WINDOW_SECONDS
+    history = [t for t in history if t >= cutoff]
+    _REQ_HISTORY[chat_id] = history
+
+    # trigger raid mode for join requests
+    if len(history) >= REQ_THRESHOLD:
+        _REQ_RAID_UNTIL[chat_id] = now + REQ_RAID_DURATION_SECONDS
+        return True
+
+    return _req_is_in_raid_mode(chat_id)
 
 
 async def _delete_message_later(bot, chat_id: int, message_id: int, delay: int = 120) -> None:
@@ -209,7 +248,6 @@ async def _maybe_require_phone_verification(
     mention = f'<a href="tg://user?id={user_id}">{display_name}</a>'
 
     # Group message with ONE personal button
-    # Group message with ONE personal button
     try:
         text_lines = [
             f"👋 Welcome {mention}!",
@@ -253,7 +291,6 @@ async def _maybe_require_phone_verification(
             user_id,
             e,
         )
-
 
     # Schedule ban after 2 minutes if still not verified
     asyncio.create_task(_ban_if_not_verified_later(bot, chat_id, user_id, delay=120))
@@ -608,6 +645,46 @@ async def on_member_update(upd: ChatMemberUpdated) -> None:
 def register(dp) -> None:
     # Primary: CM updates
     dp.chat_member.register(on_member_update)
+
+    # --- Join request handler (private groups / request-only groups) ---
+    async def on_join_request(req: ChatJoinRequest):
+        chat_id = req.chat.id
+        user = req.from_user
+
+        if not user:
+            return
+
+        # 1) Always block real Telegram bots at request stage
+        if getattr(user, "is_bot", False):
+            try:
+                await req.decline()
+            except Exception:
+                pass
+            return
+
+        # 2) Flood detection for JOIN REQUESTS (many requests in a short window)
+        in_raid = _record_join_request_and_check_raid(chat_id)
+        if in_raid:
+            # Request-raid mode: decline everyone for a while
+            try:
+                await req.decline()
+            except Exception:
+                pass
+            return
+
+        # 3) Not raid, not bot -> approve after a small delay
+        #    After approval, your existing on_member_update + phone/EU gate will run.
+        async def _approve_later(r: ChatJoinRequest, delay: int = 5):
+            await asyncio.sleep(delay)
+            try:
+                await r.approve()
+            except Exception:
+                # If another admin already approved/declined, this can fail. That's fine.
+                pass
+
+        asyncio.create_task(_approve_later(req))
+
+    dp.chat_join_request.register(on_join_request)
 
     # Fallbacks ONLY for groups/supergroups where CM events don't fire
     async def on_new_members_service(msg: Message):
